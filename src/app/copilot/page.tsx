@@ -17,6 +17,7 @@ import {
   getAgentGreeting,
   getAgentOfferHelp,
   getAgentClosing,
+  getAgentReplyForCustomerMessage,
 } from "@/lib/ur-agents";
 import { cancelTTS } from "@/lib/tts";
 import { useAgentSpeechCapture } from "@/hooks/useAgentSpeechCapture";
@@ -159,8 +160,17 @@ export default function CoPilotPage() {
 
       while (turnCount < MAX_TURNS && !spoofLoopAbortedRef.current) {
         setIsSuggestionsLoading(true);
+
+        // ── Customer turn: use the last agent message as input ────────────────
+        const lastAgentLine =
+          [...transcriptRef.current]
+            .reverse()
+            .find((e) => e.speaker === "agent")?.text ?? agentGreeting;
+
         let customerLine: string;
         try {
+          // Pass only the latest agent line into the spoof agent
+          spoofMessage = buildSpoofContinuation(`ISR: ${lastAgentLine}`);
           customerLine = await getSpoofAgentReply(spoofMessage, spoofSid);
         } catch (err) {
           console.error("Spoof agent error:", err);
@@ -254,11 +264,27 @@ export default function CoPilotPage() {
           console.error("Resolution agent error:", err);
         }
         if (spoofLoopAbortedRef.current) return;
+
+        // ── Agent turn: use the last customer message as input ───────────────
+        const lastCustomerLine =
+          [...transcriptRef.current]
+            .reverse()
+            .find((e) => e.speaker === "customer")?.text ?? "";
+
+        let agentGeneratedLine: string;
+        try {
+          agentGeneratedLine = await getAgentReplyForCustomerMessage(
+            sid,
+            lastCustomerLine
+          );
+        } catch (err) {
+          console.error("Agent reply error:", err);
+          agentGeneratedLine = "(Agent is thinking...)";
+        }
+        if (spoofLoopAbortedRef.current) return;
         setIsSuggestionsLoading(false);
 
-        const agentLine = await agentSpeech.waitForAgentResponse();
-        if (spoofLoopAbortedRef.current) return;
-        const agentText = (agentLine || "(No response)").trim();
+        const agentText = (agentGeneratedLine || "(Agent is thinking...)").trim();
         addToTranscript({
           speaker: "agent",
           text: agentText,
@@ -274,7 +300,7 @@ export default function CoPilotPage() {
         onCallResolved(transcriptRef.current);
       }
     },
-    [addToTranscript, agentSpeech.waitForAgentResponse]
+    [addToTranscript]
   );
 
   const handleSayWhisper = useCallback(

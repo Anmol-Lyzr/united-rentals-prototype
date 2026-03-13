@@ -85,7 +85,7 @@ export async function getSpoofAgentReply(
  * Ask the Resolution Agent for a single phrase (no transcript). Used for greeting, offer-help, and closing lines.
  * Returns plain text; uses fallback if the agent returns empty or errors.
  */
-async function getAgentPhrase(
+async function getAgentResponse(
   sessionId: string,
   prompt: string,
   fallback: string
@@ -124,7 +124,7 @@ export async function getAgentGreeting(
   isrName: string
 ): Promise<string> {
   const name = (isrName || "Sarah").trim();
-  return getAgentPhrase(
+  return getAgentResponse(
     sessionId,
     `You are an Inside Sales Representative at United Rentals. A customer is about to speak. Generate ONLY your opening greeting (one sentence). Use your name: ${name}. Reply with nothing else—no JSON, no labels—just the greeting.`,
     `Thank you for calling United Rentals. I'm ${name}. How may I help you today?`
@@ -133,7 +133,7 @@ export async function getAgentGreeting(
 
 /** Get the ISR's line offering additional help before closing (agent-driven). */
 export async function getAgentOfferHelp(sessionId: string): Promise<string> {
-  return getAgentPhrase(
+  return getAgentResponse(
     sessionId,
     `You are an ISR wrapping up a call. Generate ONLY your single line offering to help with anything else (e.g. asking if the customer needs anything more). One sentence only. Reply with nothing else—no JSON, no labels.`,
     "Is there anything else I can help you with?"
@@ -142,10 +142,40 @@ export async function getAgentOfferHelp(sessionId: string): Promise<string> {
 
 /** Get the ISR's closing goodbye line (agent-driven). */
 export async function getAgentClosing(sessionId: string): Promise<string> {
-  return getAgentPhrase(
+  return getAgentResponse(
     sessionId,
     `You are an ISR. The customer has said they don't need anything else. Generate ONLY your closing goodbye line (one sentence, thank them and wish them a good day). Reply with nothing else—no JSON, no labels.`,
     "Thank you for calling United Rentals. Hope you have a great day ahead."
+  );
+}
+
+/**
+ * Turn-based ISR reply helper.
+ * Given the customer's latest message, ask the Resolution Agent for the ISR's next line.
+ * This is used for live, turn-by-turn agent responses during the demo call.
+ */
+export async function getAgentReplyForCustomerMessage(
+  sessionId: string,
+  customerMessage: string
+): Promise<string> {
+  const trimmed = customerMessage?.trim();
+  const safeCustomerLine =
+    trimmed && trimmed.length > 0
+      ? trimmed.slice(0, 600)
+      : "The customer is waiting for assistance but has not said anything specific yet.";
+
+  const prompt = `You are an Inside Sales Representative at United Rentals on a live phone call.
+
+The customer just said: "${safeCustomerLine}"
+
+Reply with ONLY your next line as the ISR in 1–3 short sentences.
+Be conversational, concise, and helpful.
+Do NOT include any labels, JSON, or prefixes—only the spoken line.`;
+
+  return getAgentResponse(
+    sessionId,
+    prompt,
+    "Thanks for letting me know. Let me look into that for you."
   );
 }
 
