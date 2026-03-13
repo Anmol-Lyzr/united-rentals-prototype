@@ -108,6 +108,8 @@ export default function CoPilotPage() {
   const [customInput, setCustomInput] = useState("");
   const [rightPanelTab, setRightPanelTab] = useState<"chat" | "info">("chat");
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const [isCustomerInfoAvailable, setIsCustomerInfoAvailable] =
+    useState(false);
 
   const spoofLoopAbortedRef = useRef(false);
   const sessionIdRef = useRef(sessionId);
@@ -126,10 +128,17 @@ export default function CoPilotPage() {
     return () => clearInterval(t);
   }, [callStatus]);
 
-  const addToTranscript = useCallback((entry: TranscriptEntry) => {
-    transcriptRef.current = [...transcriptRef.current, entry];
-    setTranscriptEntries([...transcriptRef.current]);
-  }, []);
+  const addToTranscript = useCallback(
+    (entry: TranscriptEntry) => {
+      transcriptRef.current = [...transcriptRef.current, entry];
+      setTranscriptEntries([...transcriptRef.current]);
+
+      if (entry.speaker === "customer" && !isCustomerInfoAvailable) {
+        setIsCustomerInfoAvailable(true);
+      }
+    },
+    [isCustomerInfoAvailable]
+  );
 
   const updateAiInsightsFromSuggestion = useCallback(
     (s: ResolutionSuggestion | null) => {
@@ -429,6 +438,8 @@ export default function CoPilotPage() {
     setCallDuration(0);
     setCustomInput("");
     spoofLoopAbortedRef.current = false;
+    setIsCustomerInfoAvailable(false);
+    setRightPanelTab("chat");
 
     // Randomly select persona and intent for this incoming call
     const randomPersona =
@@ -500,6 +511,8 @@ export default function CoPilotPage() {
     setCallDuration(0);
     setSummarySaved(false);
     setSessionId(generateSessionId("copilot"));
+    setIsCustomerInfoAvailable(false);
+    setRightPanelTab("chat");
   }, []);
 
   const callStatusForControls =
@@ -695,24 +708,26 @@ export default function CoPilotPage() {
                           >
                             Chat Assist
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setRightPanelTab("info")}
-                            className={`inline-flex items-center justify-center gap-1 rounded-full px-3 py-1 font-medium ${
-                              rightPanelTab === "info"
-                                ? "bg-[#6366f1] text-white"
-                                : "text-slate-500"
-                            }`}
-                          >
-                            Customer Info
-                          </button>
+                          {isCustomerInfoAvailable && (
+                            <button
+                              type="button"
+                              onClick={() => setRightPanelTab("info")}
+                              className={`inline-flex items-center justify-center gap-1 rounded-full px-3 py-1 font-medium ${
+                                rightPanelTab === "info"
+                                  ? "bg-[#6366f1] text-white"
+                                  : "text-slate-500"
+                              }`}
+                            >
+                              Customer Info
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     {/* Tab content */}
                     <div className="flex-1 min-h-0 overflow-y-auto">
-                      {rightPanelTab === "info" ? (
+                      {rightPanelTab === "info" && isCustomerInfoAvailable ? (
                         <CustomerInfoCard
                           record={undefined}
                           personaLabel={
