@@ -66,7 +66,10 @@ export default function ReportsPage() {
               </p>
             </div>
           </div>
-          <Button size="sm" className="gap-2">
+          <Button
+            size="sm"
+            className="gap-2 bg-[#6366f1] hover:bg-[#4f46e5] text-white"
+          >
             <Plus className="size-4" />
             Custom Report
           </Button>
@@ -98,7 +101,10 @@ export default function ReportsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-sm">
                     <span>{tpl.name}</span>
-                    <Badge variant="secondary" className="text-[11px]">
+                    <Badge
+                      variant="secondary"
+                      className="text-[11px] bg-[#eef2ff] text-[#4f46e5] border border-[#e0e7ff]"
+                    >
                       Template
                     </Badge>
                   </CardTitle>
@@ -109,6 +115,7 @@ export default function ReportsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="border-[#6366f1] text-[#4f46e5] hover:bg-[#eef2ff]"
                     onClick={() => handleGenerate(tpl)}
                   >
                     Generate
@@ -132,7 +139,7 @@ export default function ReportsPage() {
                 </div>
                 <div className="inline-flex items-center gap-2 text-xs">
                   <span className="text-slate-500">Filter:</span>
-                  <div className="inline-flex rounded-full bg-slate-100 p-1">
+                  <div className="inline-flex rounded-full bg-[#eef2ff] p-1">
                     {[
                       { id: "all", label: "All" },
                       { id: "daily", label: "Daily" },
@@ -151,7 +158,7 @@ export default function ReportsPage() {
                         }
                         className={`px-3 py-0.5 rounded-full ${
                           filter === opt.id
-                            ? "bg-white text-slate-900 shadow-sm"
+                            ? "bg-white text-[#4f46e5] shadow-sm"
                             : "text-slate-500"
                         }`}
                       >
@@ -180,13 +187,13 @@ export default function ReportsPage() {
                         className="grid grid-cols-[2fr,1fr,1fr,1fr] items-center px-4 py-2 border-t border-slate-100 text-[13px] text-slate-700"
                       >
                         <span className="truncate">{row.name}</span>
-                        <span className="text-emerald-600 text-xs font-medium">
+                        <span className="text-[#16a34a] text-xs font-medium">
                           {row.status}
                         </span>
                         <span className="text-xs text-slate-500">
                           {row.generatedAt}
                         </span>
-                        <span className="text-xs text-indigo-600 font-medium">
+                        <span className="text-xs text-[#4f46e5] font-medium">
                           Download
                         </span>
                       </div>

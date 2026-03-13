@@ -128,6 +128,8 @@ function CallRow({ record }: { record: CallRecord }) {
     !!record.call_categories?.primary_type ||
     (record.call_categories?.secondary_types?.length ?? 0) > 0;
 
+  const isGeneralCategory = cs.call_category === "general_inquiry";
+
   return (
     <div
       className={cn(
@@ -155,7 +157,12 @@ function CallRow({ record }: { record: CallRecord }) {
             </span>
             <Badge
               variant="outline"
-              className="text-xs font-medium bg-primary/10 text-primary border-primary/20"
+              className={cn(
+                "text-xs font-medium",
+                isGeneralCategory
+                  ? "bg-[#eef2ff] text-[#4f46e5] border-[#e0e7ff]"
+                  : "bg-primary/10 text-primary border-primary/20"
+              )}
             >
               {formatCategory(cs.call_category)}
             </Badge>
@@ -253,7 +260,12 @@ function CallRow({ record }: { record: CallRecord }) {
                 {record.call_categories?.primary_type && (
                   <Badge
                     variant="outline"
-                    className="bg-primary/10 text-primary border-primary/20"
+                    className={cn(
+                      "font-medium",
+                      record.call_categories.primary_type === "general_inquiry"
+                        ? "bg-[#eef2ff] text-[#4f46e5] border-[#e0e7ff] text-xs"
+                        : "bg-primary/10 text-primary border-primary/20 text-xs"
+                    )}
                   >
                     {record.call_categories.primary_type}
                   </Badge>
