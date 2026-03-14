@@ -65,7 +65,7 @@ export default function IntegrationsPage() {
             </div>
           </div>
           <Badge variant="outline" className="text-xs">
-            6 connected · demo only
+            6 connected
           </Badge>
         </header>
 
@@ -125,7 +125,7 @@ export default function IntegrationsPage() {
                   <span>
                     Use for richer context in{" "}
                     <span className="font-medium text-slate-700">
-                      demo calls
+                      calls
                     </span>
                     .
                   </span>

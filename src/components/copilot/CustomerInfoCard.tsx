@@ -4,9 +4,17 @@ import { useEffect, useState } from "react";
 import type { CallRecord } from "@/types/call-records";
 import { getTicketsForPersona, type Ticket } from "@/mock/customer-tickets";
 import {
+  getPastCallsForPersona,
+  type PastCallEntry,
+} from "@/mock/customer-past-calls";
+import {
   getCustomerInfoForPersona,
   type PersonaCustomerProfile,
 } from "@/mock/customer-personas";
+import {
+  getRentalProfileByAccount,
+  type ActiveRental,
+} from "@/mock/equipment-and-rentals";
 
 type AiCustomerInsights = {
   nextBestAction?: string;
@@ -46,11 +54,11 @@ function buildCustomerFromRecord(
 
   if (!record) {
     return {
-      name: "Demo Customer",
-      account: "UR-DEMO-001",
+      name: "Customer",
+      account: "UR-001",
       email: "customer@example.com",
       phone: "+1 (555) 010-0000",
-      location: "Demo Branch",
+      location: "—",
       memberSince: "Jan 2024",
       tier: "Premium",
       status: "active",
@@ -95,13 +103,50 @@ export function CustomerInfoCard({
     .join("");
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [pastCalls, setPastCalls] = useState<PastCallEntry[]>([]);
+  const [activeRentals, setActiveRentals] = useState<ActiveRental[]>([]);
+  const [rentalBranch, setRentalBranch] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [creditLimit, setCreditLimit] = useState<number | null>(null);
+
+  // Resolve account ID from record or persona
+  const accountId =
+    record?.call_summary?.customer_account ??
+    record?.account_id ??
+    (personaCustomer?.account ?? null);
 
   useEffect(() => {
     void (async () => {
-      const data = await getTicketsForPersona(personaLabel);
-      setTickets(data);
+      const [ticketData, callData] = await Promise.all([
+        getTicketsForPersona(personaLabel),
+        getPastCallsForPersona(personaLabel),
+      ]);
+      setTickets(ticketData);
+      setPastCalls(callData);
     })();
   }, [personaLabel]);
+
+  useEffect(() => {
+    if (!accountId) {
+      setActiveRentals([]);
+      setRentalBranch(null);
+      setAccountType(null);
+      setCreditLimit(null);
+      return;
+    }
+    const profile = getRentalProfileByAccount(accountId);
+    if (profile) {
+      setActiveRentals(profile.active_rentals);
+      setRentalBranch(profile.branch);
+      setAccountType(profile.account_type);
+      setCreditLimit(profile.credit_limit ?? null);
+    } else {
+      setActiveRentals([]);
+      setRentalBranch(null);
+      setAccountType(null);
+      setCreditLimit(null);
+    }
+  }, [accountId]);
 
   return (
     <section className="px-4 pt-4 pb-4 border-b border-[#e5e7eb] bg-gradient-to-b from-white via-[#f5f3ff] to-[#eef2ff]">
@@ -150,7 +195,62 @@ export function CustomerInfoCard({
             <dd className="truncate text-right">{customer.memberSince}</dd>
           </div>
         )}
+        {rentalBranch && (
+          <div className="flex items-center justify-between gap-2">
+            <dt className="text-slate-500">Branch</dt>
+            <dd className="truncate text-right">{rentalBranch}</dd>
+          </div>
+        )}
+        {accountType && (
+          <div className="flex items-center justify-between gap-2">
+            <dt className="text-slate-500">Account type</dt>
+            <dd className="truncate text-right capitalize">{accountType}</dd>
+          </div>
+        )}
+        {creditLimit != null && (
+          <div className="flex items-center justify-between gap-2">
+            <dt className="text-slate-500">Credit limit</dt>
+            <dd className="truncate text-right">
+              ${creditLimit.toLocaleString()}
+            </dd>
+          </div>
+        )}
       </dl>
+
+      {/* Active rentals (equipment & rental details from KB) */}
+      {activeRentals.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-[#e5e7eb]">
+          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-2">
+            Active rentals
+          </p>
+          <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+            {activeRentals.map((r) => (
+              <div
+                key={r.contract_number}
+                className="rounded-md bg-white px-2 py-1.5 text-[11px] border border-[#e5e7eb]"
+              >
+                <p className="font-medium text-slate-900 truncate">
+                  {r.equipment}
+                </p>
+                <div className="flex items-center justify-between gap-2 mt-0.5 text-[10px] text-slate-500">
+                  <span>{r.contract_number}</span>
+                  {r.rate_tier && (
+                    <span className="rounded bg-[#eef2ff] text-[#4f46e5] px-1.5 py-0.5 capitalize">
+                      {r.rate_tier}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-600 mt-0.5 truncate">
+                  {r.jobsite}
+                  {r.start_date ? ` · Out ${r.start_date}` : ""}
+                  {r.scheduled_in ? ` · In ${r.scheduled_in}` : ""}
+                  {r.rpp_included ? " · RPP" : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* AI-powered call insights */}
       {(
@@ -191,11 +291,39 @@ export function CustomerInfoCard({
         </div>
       )}
 
+      {/* Past calls */}
       <div className="mt-4 pt-3 border-t border-[#e5e7eb]">
         <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-2">
-          Tickets
+          Past calls
         </p>
-        <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+          {pastCalls.map((call) => (
+            <div
+              key={call.id}
+              className="rounded-md bg-white px-2 py-1.5 text-[11px] border border-[#e5e7eb]"
+            >
+              <p className="font-medium text-slate-900 truncate">{call.subject}</p>
+              <div className="flex items-center justify-between gap-2 mt-0.5 text-[10px] text-slate-500">
+                <span>{call.date}</span>
+                <span className="rounded bg-[#eef2ff] text-[#4f46e5] px-1.5 py-0.5">
+                  {call.category}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-600 mt-0.5 truncate">
+                {call.outcome}
+                {call.duration ? ` · ${call.duration}` : ""}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Ticket generate history */}
+      <div className="mt-4 pt-3 border-t border-[#e5e7eb]">
+        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-2">
+          Ticket history
+        </p>
+        <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
           {tickets.map((ticket) => (
             <div
               key={ticket.id}
@@ -205,10 +333,15 @@ export function CustomerInfoCard({
                 <p className="font-medium text-slate-900 truncate">
                   {ticket.title}
                 </p>
-                <p className="text-[10px] text-slate-500">{ticket.id}</p>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                  <span>{ticket.id}</span>
+                  {ticket.generatedAt && (
+                    <span>Generated {ticket.generatedAt}</span>
+                  )}
+                </div>
               </div>
               <span
-                className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                className={`ml-2 shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
                   ticket.status === "open"
                     ? "bg-amber-50 text-amber-700"
                     : "bg-emerald-50 text-emerald-700"

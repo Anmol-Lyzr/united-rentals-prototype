@@ -92,7 +92,9 @@ function getSummaryText(record: CallRecord): string {
           ? obj.summary
           : typeof obj.call_summary === "string"
             ? obj.call_summary
-            : null;
+            : typeof (obj as any).interaction?.summary === "string"
+              ? (obj as any).interaction.summary
+              : null;
       if (narrative) return narrative;
     } catch {
       // fall through
@@ -119,6 +121,45 @@ function CallRow({ record }: { record: CallRecord }) {
   const sentimentCfg =
     SENTIMENT_CONFIG[health.sentiment] || SENTIMENT_CONFIG.neutral;
   const summaryText = getSummaryText(record);
+  // Optional structured JSON summary from newer agent shape
+  let structuredSummary: any | null = null;
+  if (record.summary?.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(record.summary);
+      if (parsed && typeof parsed === "object" && "customer" in parsed && "interaction" in parsed) {
+        structuredSummary = parsed;
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+  const structuredInteraction = structuredSummary?.interaction as
+    | {
+        subject?: string;
+        date?: string;
+        time?: string;
+        duration_minutes?: number;
+        summary?: string;
+      }
+    | undefined;
+  const structuredEquipment = structuredSummary?.equipment_details as
+    | {
+        item?: string;
+        use_case?: string;
+        duration?: string;
+        project_start_date?: string;
+        location?: string;
+      }
+    | undefined;
+  const structuredInsights = structuredSummary?.insights as string[] | undefined;
+  const structuredSales = structuredSummary?.sales_opportunities as
+    | {
+        description?: string;
+        potential_equipment?: string[];
+      }
+    | undefined;
+  const structuredFollowUp: string | undefined =
+    structuredSummary?.follow_up_requirement;
   const hasActions = record.action_items.length > 0;
   const hasNextSteps = record.next_steps.length > 0;
   const hasInsights =
@@ -221,6 +262,67 @@ function CallRow({ record }: { record: CallRecord }) {
             )}
           </section>
 
+          {/* Interaction details from structured summary (new agent shape) */}
+          {structuredInteraction && (
+            <section className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+              <h3 className="text-xs font-semibold text-slate-600 mb-1">
+                Interaction
+              </h3>
+              {structuredInteraction.subject && (
+                <p className="text-sm font-medium text-slate-800">
+                  {structuredInteraction.subject}
+                </p>
+              )}
+              <p className="mt-1 text-xs text-slate-600">
+                {[structuredInteraction.date, structuredInteraction.time]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {structuredInteraction.duration_minutes != null &&
+                  ` · ${structuredInteraction.duration_minutes} min`}
+              </p>
+            </section>
+          )}
+
+          {/* Equipment details from structured summary */}
+          {structuredEquipment && (
+            <section className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+              <h3 className="text-xs font-semibold text-slate-600 mb-1">
+                Equipment & project
+              </h3>
+              {structuredEquipment.item && (
+                <p className="text-sm font-medium text-slate-800">
+                  {structuredEquipment.item}
+                </p>
+              )}
+              <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+                {structuredEquipment.use_case && (
+                  <p>
+                    <span className="font-medium">Use case:</span>{" "}
+                    {structuredEquipment.use_case}
+                  </p>
+                )}
+                {structuredEquipment.duration && (
+                  <p>
+                    <span className="font-medium">Duration:</span>{" "}
+                    {structuredEquipment.duration}
+                  </p>
+                )}
+                {structuredEquipment.project_start_date && (
+                  <p>
+                    <span className="font-medium">Start date:</span>{" "}
+                    {structuredEquipment.project_start_date}
+                  </p>
+                )}
+                {structuredEquipment.location && (
+                  <p>
+                    <span className="font-medium">Location:</span>{" "}
+                    {structuredEquipment.location}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Job site */}
           {record.job_site && (
             <section className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
@@ -248,7 +350,9 @@ function CallRow({ record }: { record: CallRecord }) {
           )}
 
           {/* Insights / Key topics */}
-          {(hasInsights || (record.key_topics?.length ?? 0) > 0) && (
+          {(hasInsights ||
+            (record.key_topics?.length ?? 0) > 0 ||
+            (structuredInsights?.length ?? 0) > 0) && (
             <section>
               <div className="flex items-center gap-2 mb-2">
                 <Target className="size-4 text-primary" />
@@ -302,6 +406,13 @@ function CallRow({ record }: { record: CallRecord }) {
                   </Badge>
                 )}
               </div>
+              {structuredInsights && structuredInsights.length > 0 && (
+                <ul className="mt-2 list-disc list-inside text-xs text-slate-600 space-y-0.5">
+                  {structuredInsights.map((insight, i) => (
+                    <li key={i}>{insight}</li>
+                  ))}
+                </ul>
+              )}
               {record.sentiment?.summary && (
                 <p className="mt-2 text-xs text-slate-600 italic">
                   {record.sentiment.summary}
@@ -457,14 +568,36 @@ function CallRow({ record }: { record: CallRecord }) {
           </section>
 
           {/* Follow-up */}
-          {record.follow_up_details && (
+          {(record.follow_up_details || structuredFollowUp) && (
             <section className="rounded-xl bg-amber-50 border border-amber-200 p-3">
               <p className="text-xs font-semibold text-amber-800 mb-0.5">
                 Follow-up required
               </p>
               <p className="text-sm text-amber-800">
-                {record.follow_up_details}
+                {record.follow_up_details ?? structuredFollowUp}
               </p>
+            </section>
+          )}
+
+          {/* Sales opportunity from structured summary */}
+          {structuredSales?.description && (
+            <section className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+              <div className="flex items-center gap-2 mb-1.5">
+                <TrendingUp className="size-4 text-emerald-700" />
+                <h3 className="text-xs font-semibold text-emerald-800">
+                  Sales opportunity
+                </h3>
+              </div>
+              <p className="text-sm text-emerald-900">
+                {structuredSales.description}
+              </p>
+              {structuredSales.potential_equipment &&
+                structuredSales.potential_equipment.length > 0 && (
+                  <p className="mt-1 text-xs text-emerald-800">
+                    Potential equipment:{" "}
+                    {structuredSales.potential_equipment.join(", ")}
+                  </p>
+                )}
             </section>
           )}
 

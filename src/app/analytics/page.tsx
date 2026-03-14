@@ -316,7 +316,7 @@ export default function AnalyticsPage() {
                 </CardTitle>
                 <CardDescription className="text-indigo-100 text-xs sm:text-sm max-w-xl">
                   Real-time view of how the ISR Co-Pilot assists across all
-                  simulated calls in this demo.
+                  calls.
                 </CardDescription>
               </div>
               <Tabs
@@ -368,7 +368,7 @@ export default function AnalyticsPage() {
                 sublabel="Based on summary call_duration_estimate"
               />
               <MetricTile
-                label="Satisfaction (demo)"
+                label="Satisfaction"
                 value={satisfactionDisplay}
                 delta={
                   sentimentScore > 0
@@ -579,11 +579,11 @@ export default function AnalyticsPage() {
                     ISR Co-Pilot performance
                   </CardTitle>
                   <CardDescription>
-                    Demo view of key service levels for this agent.
+                    Key service levels for this agent.
                   </CardDescription>
                 </div>
                 <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">
-                  3 active demo shifts
+                  3 active shifts
                 </Badge>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-2">

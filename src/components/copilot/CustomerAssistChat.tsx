@@ -5,6 +5,7 @@ import { Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CUSTOMER_ASSIST_QUICK_ACTIONS } from "@/constants/quick-actions";
+import { buildKbAnswer, type CustomerContext } from "@/lib/kb-assist";
 
 type ChatMessage = {
   id: number;
@@ -12,15 +13,21 @@ type ChatMessage = {
   text: string;
 };
 
-function buildMockAnswer(question: string): string {
-  return (
-    "Demo answer from the ISR Co-Pilot knowledge base. " +
-    "In a real deployment this panel would call your KB agents to answer:\n\n" +
-    `“${question}”`
-  );
+/** Simple formatting for KB answers: **bold** and newlines. */
+function formatKbText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br />");
 }
 
-export function CustomerAssistChat() {
+export function CustomerAssistChat({
+  customerContext,
+  showCustomerContextHint = false,
+}: {
+  customerContext?: CustomerContext | null;
+  /** When true, show the personalized hint (e.g. "Sarah Lopez's active rentals") in the empty state. Set to true only after a customer message has been displayed in the call. */
+  showCustomerContextHint?: boolean;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [nextId, setNextId] = useState(1);
@@ -33,10 +40,11 @@ export function CustomerAssistChat() {
       role: "user",
       text: trimmed,
     };
+    const answerText = buildKbAnswer(trimmed, customerContext);
     const answer: ChatMessage = {
       id: nextId + 1,
       role: "assistant",
-      text: buildMockAnswer(trimmed),
+      text: answerText,
     };
     setNextId(nextId + 2);
     setMessages((prev) => [...prev, userMessage, answer]);
@@ -48,12 +56,14 @@ export function CustomerAssistChat() {
   };
 
   return (
-    <section className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-[#eef2ff] via-white to-white">
+    <section className="flex flex-col h-full min-h-0 bg-gradient-to-b from-[#eef2ff] via-white to-white">
       {/* Chat history */}
       <div className="mt-3 flex-1 min-h-0 px-4 pb-3 overflow-y-auto space-y-2 text-xs">
         {messages.length === 0 && (
           <p className="mt-4 text-center text-slate-500">
-            Start by choosing a quick question above or type your own below.
+            {customerContext?.name && showCustomerContextHint
+              ? `Ask about rates, off-rent, delivery, RPP, or "${customerContext.name}"'s active rentals.`
+              : "Start by choosing a quick question above or type your own below."}
           </p>
         )}
         {messages.map((m) => (
@@ -64,13 +74,24 @@ export function CustomerAssistChat() {
             }`}
           >
             <div
-              className={`max-w-[80%] rounded-2xl px-3 py-2 whitespace-pre-wrap ${
+              className={`max-w-[95%] rounded-2xl px-3 py-2 ${
                 m.role === "user"
                   ? "bg-[#6366f1] text-white"
                   : "bg-white text-slate-900 border border-[#e5e7eb]"
-              }`}
+              } ${m.role === "assistant" ? "" : "whitespace-pre-wrap"}`}
             >
-              {m.text}
+              {m.role === "assistant" ? (
+                <span
+                  className="text-[11px] leading-relaxed [&_strong]:font-semibold"
+                  dangerouslySetInnerHTML={{
+                    __html: formatKbText(m.text),
+                  }}
+                />
+              ) : (
+                <span className="text-[11px] leading-relaxed">
+                  {m.text}
+                </span>
+              )}
             </div>
           </div>
         ))}
@@ -116,4 +137,3 @@ export function CustomerAssistChat() {
     </section>
   );
 }
-

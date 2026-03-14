@@ -418,8 +418,15 @@ interface LyzrSummaryResponse {
 
 export async function generateCallSummary(
   fullTranscript: string,
-  sessionId: string
+  sessionId: string,
+  customerName?: string,
+  customerAccount?: string
 ): Promise<CallRecord> {
+  const customerContext =
+    customerName != null && customerName !== ""
+      ? `This call was with customer: ${customerName}. Account: ${customerAccount ?? "N/A"}.\n\n`
+      : "";
+  const message = `${customerContext}Process this completed call transcript and generate a full structured summary:\n\n${fullTranscript}`;
   const response = await fetch(API_BASE_URL, {
     method: "POST",
     headers: {
@@ -427,7 +434,7 @@ export async function generateCallSummary(
       "x-api-key": API_KEY,
     },
     body: JSON.stringify({
-      message: `Process this completed call transcript and generate a full structured summary:\n\n${fullTranscript}`,
+      message,
       session_id: sessionId,
       user_id: DEFAULT_USER_ID,
       agent_id: SUMMARY_AGENT_ID,
@@ -457,14 +464,18 @@ export async function generateCallSummary(
       parsed.account_name ?? parsed.customer?.name ?? "Unknown";
     const customerAccount =
       parsed.account_id ?? parsed.customer?.rental_number ?? null;
+    // Prefer explicit narrative fields from the agent; support legacy and new structured shapes.
+    const interactionSummary =
+      typeof (parsed as any).interaction?.summary === "string"
+        ? (parsed as any).interaction.summary
+        : undefined;
     const narrativeSummary =
-      typeof parsed.call_summary === "string"
-        ? parsed.call_summary
-        : typeof parsed.summary === "string"
-          ? parsed.summary
-          : typeof reply === "string" && reply.trim().startsWith("{")
-            ? ""
-            : reply;
+      (typeof parsed.call_summary === "string" && parsed.call_summary) ||
+      (typeof parsed.summary === "string" && parsed.summary) ||
+      interactionSummary ||
+      (typeof reply === "string" && !reply.trim().startsWith("{")
+        ? reply
+        : "");
 
     const actionItems = (parsed.action_items ?? []).map((item, idx) => {
       const raw = item as { id?: number; description?: string; action?: string; owner?: string; deadline?: string; status?: string };
@@ -682,7 +693,7 @@ export function getDemoCallHistory(): CallRecord[] {
         branch: "Austin South #1247",
       },
       summary:
-        "Customer called to reserve a 26ft scissor lift for a new commercial painting project starting March 18. ISR confirmed the equipment category and discussed delivery logistics to the Riverside Warehouse Demo jobsite. Customer also asked about RPP coverage and was informed about the 15% charge and coverage limits. Reservation was created in RentalMan pending delivery scheduling.",
+        "Customer called to reserve a 26ft scissor lift for a new commercial painting project starting March 18. ISR confirmed the equipment category and discussed delivery logistics to the Riverside Warehouse jobsite. Customer also asked about RPP coverage and was informed about the 15% charge and coverage limits. Reservation was created in RentalMan pending delivery scheduling.",
       key_topics: [
         "scissor lift reservation",
         "RPP explanation",

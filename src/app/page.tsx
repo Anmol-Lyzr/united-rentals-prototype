@@ -216,7 +216,7 @@ export default function DashboardPage() {
             <Card className="border-none bg-white text-slate-900 shadow-md shadow-indigo-100">
               <CardContent className="pt-4 space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                  Total conversations (demo)
+                  Total conversations
                 </p>
                 <p className="text-2xl font-semibold">
                   {hasData ? totalConversations.toLocaleString() : "1,847"}
@@ -257,7 +257,7 @@ export default function DashboardPage() {
             <Card className="border-none bg-white text-slate-900 shadow-md shadow-indigo-100">
               <CardContent className="pt-4 space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                  Cost saved (demo)
+                  Cost saved
                 </p>
                 <p className="text-2xl font-semibold">
                   {hasData
@@ -280,81 +280,123 @@ export default function DashboardPage() {
                 <div>
                   <CardTitle className="text-sm flex items-center gap-2">
                     <LineChart className="size-4 text-indigo-500" />
-                    Conversation volume (demo)
+                    Call volume
                   </CardTitle>
                   <CardDescription>
-                    How your Co-Pilot spreads effort across the day.
+                    Support calls handled by ISR Co-Pilot over the last 7 days.
                   </CardDescription>
                 </div>
                 <Badge variant="outline" className="text-[11px]">
-                  Chat · Voice · Email
+                  Last 7 days
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="h-44 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden px-3 py-4">
-                  <div className="absolute inset-x-6 top-1/2 border-t border-dashed border-slate-200/80" />
-                  <div className="relative h-full flex items-end gap-3">
-                    {(hasData && volumeSeries.length > 0
+                {(() => {
+                  const series =
+                    hasData && volumeSeries.length > 0
                       ? volumeSeries
                       : [
-                          { day: subDays(new Date(), 4), count: 12 },
-                          { day: subDays(new Date(), 3), count: 18 },
-                          { day: subDays(new Date(), 2), count: 24 },
-                          { day: subDays(new Date(), 1), count: 20 },
-                          { day: new Date(), count: 15 },
-                        ]
-                    ).map((point) => {
-                      const maxCount =
-                        hasData && volumeSeries.length > 0
-                          ? volumeMax || 1
-                          : 24;
-                      const base =
-                        maxCount > 0 ? point.count / maxCount : 0;
-                      const height = base > 0 ? 20 + base * 65 : 8;
-                      return (
-                        <div
-                          key={format(point.day, "EEE")}
-                          className="flex-1 flex items-end justify-center gap-1"
-                        >
-                          <div
-                            className="w-full max-w-[32px] rounded-t-2xl bg-indigo-400/80"
-                            style={{ height: `${height}%` }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-3 flex justify-between text-[11px] text-slate-400">
-                    {(hasData && volumeSeries.length > 0
-                      ? volumeSeries
-                      : [
-                          { day: subDays(new Date(), 4), count: 12 },
-                          { day: subDays(new Date(), 3), count: 18 },
-                          { day: subDays(new Date(), 2), count: 24 },
-                          { day: subDays(new Date(), 1), count: 20 },
-                          { day: new Date(), count: 15 },
-                        ]
-                    ).map((point) => (
-                      <span key={format(point.day, "EEE")}>
-                        {format(point.day, "EEE")}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-indigo-500" />
-                    Chat
-                  </span>
-                  <span className="inline-flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-sky-400" />
-                    Voice
-                  </span>
-                  <span className="inline-flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-amber-400" />
-                    Email
-                  </span>
-                </div>
+                          { day: subDays(new Date(), 6), count: 14 },
+                          { day: subDays(new Date(), 5), count: 22 },
+                          { day: subDays(new Date(), 4), count: 18 },
+                          { day: subDays(new Date(), 3), count: 26 },
+                          { day: subDays(new Date(), 2), count: 31 },
+                          { day: subDays(new Date(), 1), count: 24 },
+                          { day: new Date(), count: 19 },
+                        ];
+                  const maxCount = Math.max(
+                    ...series.map((p) => p.count),
+                    1
+                  );
+                  const chartHeight = 140;
+                  const points = series
+                    .map((p, i) => {
+                      const x = (i / (series.length - 1 || 1)) * 100;
+                      const y =
+                        chartHeight -
+                        (p.count / maxCount) * (chartHeight - 12);
+                      return `${x},${y}`;
+                    })
+                    .join(" ");
+                  const areaPoints = `0,${chartHeight} ${points} 100,${chartHeight}`;
+                  return (
+                    <div className="h-44 rounded-2xl bg-gradient-to-b from-slate-50 to-white border border-slate-100 relative overflow-hidden px-4 py-3">
+                      <div className="absolute right-3 top-3 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                        Calls
+                      </div>
+                      <svg
+                        viewBox={`0 0 100 ${chartHeight}`}
+                        preserveAspectRatio="none"
+                        className="w-full h-[120px] block"
+                      >
+                        <defs>
+                          <linearGradient
+                            id="volumeGradient"
+                            x1="0"
+                            x2="0"
+                            y1="1"
+                            y2="0"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor="#6366f1"
+                              stopOpacity="0.25"
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor="#6366f1"
+                              stopOpacity="0.02"
+                            />
+                          </linearGradient>
+                        </defs>
+                        <polygon
+                          fill="url(#volumeGradient)"
+                          points={areaPoints}
+                        />
+                        <polyline
+                          fill="none"
+                          stroke="#6366f1"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          points={points}
+                        />
+                        {series.map((p, i) => {
+                          const x = (i / (series.length - 1 || 1)) * 100;
+                          const y =
+                            chartHeight -
+                            (p.count / maxCount) * (chartHeight - 12);
+                          return (
+                            <circle
+                              key={format(p.day, "EEE")}
+                              cx={x}
+                              cy={y}
+                              r="2.5"
+                              fill="#6366f1"
+                              stroke="white"
+                              strokeWidth="1.5"
+                            />
+                          );
+                        })}
+                      </svg>
+                      <div className="flex justify-between mt-1 text-[10px] text-slate-500">
+                        {series.map((point) => (
+                          <span key={format(point.day, "EEE")}>
+                            {format(point.day, "EEE")}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                        <span>
+                          Total this period:{" "}
+                          <span className="font-semibold text-slate-800">
+                            {series.reduce((a, p) => a + p.count, 0)} calls
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
 
@@ -366,11 +408,11 @@ export default function DashboardPage() {
                     ISR Co-Pilot snapshot
                   </CardTitle>
                   <CardDescription>
-                    High-level view of the agents in this demo.
+                    High-level view of the agents.
                   </CardDescription>
                 </div>
                 <Badge variant="outline" className="text-[11px]">
-                  3 demo agents
+                  3 agents
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-4 text-xs sm:text-sm">
@@ -403,7 +445,7 @@ export default function DashboardPage() {
                 <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
                   <span>Avg. first response: 32s</span>
                   <span>Avg. resolution: 4.2m</span>
-                  <span>CSAT (demo): 4.8 / 5</span>
+                  <span>CSAT: 4.8 / 5</span>
                 </div>
               </CardContent>
             </Card>

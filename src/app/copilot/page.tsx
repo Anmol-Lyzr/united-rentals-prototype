@@ -339,7 +339,7 @@ export default function CoPilotPage() {
       }
 
       setIsSuggestionsLoading(false);
-      if (resolvedByCustomer && transcriptRef.current.length > 0) {
+      if (transcriptRef.current.length > 0) {
         onCallResolved(transcriptRef.current);
       }
     },
@@ -400,12 +400,17 @@ export default function CoPilotPage() {
         .map((e) => `${e.speaker}: ${e.text}`)
         .join("\n");
       const sid = sessionIdRef.current;
-      generateCallSummary(fullTranscript, sid)
+      const personaProfile = getCustomerInfoForPersona(
+        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
+      );
+      generateCallSummary(
+        fullTranscript,
+        sid,
+        personaProfile?.name,
+        personaProfile?.account
+      )
         .then((summary) => {
           // Ensure customer name on summary matches the active persona profile
-          const personaProfile = getCustomerInfoForPersona(
-            SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
-          );
           if (personaProfile) {
             summary.call_summary.customer_name = personaProfile.name;
             summary.call_summary.customer_account =
@@ -473,11 +478,16 @@ export default function CoPilotPage() {
       const fullTranscript = transcriptEntries
         .map((e) => `${e.speaker}: ${e.text}`)
         .join("\n");
-      generateCallSummary(fullTranscript, sessionId)
+      const personaProfile = getCustomerInfoForPersona(
+        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
+      );
+      generateCallSummary(
+        fullTranscript,
+        sessionId,
+        personaProfile?.name,
+        personaProfile?.account
+      )
         .then((summary) => {
-          const personaProfile = getCustomerInfoForPersona(
-            SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
-          );
           if (personaProfile) {
             summary.call_summary.customer_name = personaProfile.name;
             summary.call_summary.customer_account =
@@ -737,7 +747,26 @@ export default function CoPilotPage() {
                           aiInsights={aiCustomerInsights}
                         />
                       ) : (
-                        <CustomerAssistChat />
+                        <CustomerAssistChat
+                          customerContext={(() => {
+                            const p = SPOOF_PERSONAS.find(
+                              (x) => x.value === selectedPersona
+                            );
+                            const profile = p
+                              ? getCustomerInfoForPersona(p.label)
+                              : null;
+                            return profile
+                              ? {
+                                  name: profile.name,
+                                  accountId: profile.account ?? undefined,
+                                  personaLabel: p?.label,
+                                }
+                              : undefined;
+                          })()}
+                          showCustomerContextHint={transcriptEntries.some(
+                            (e) => e.speaker === "customer"
+                          )}
+                        />
                       )}
                     </div>
                   </div>

@@ -62,7 +62,7 @@ export default function ReportsPage() {
               <h1 className="text-xl font-semibold text-slate-900">Reports</h1>
               <p className="text-sm text-slate-500">
                 Generate and download summary reports for your ISR Co-Pilot
-                demo calls.
+                calls.
               </p>
             </div>
           </div>
@@ -81,7 +81,7 @@ export default function ReportsPage() {
               {
                 name: "Daily Call Summary",
                 description:
-                  "Overview of all simulated support calls assisted by the Co-Pilot.",
+                  "Overview of all support calls assisted by the Co-Pilot.",
                 cadence: "Daily · PDF",
               },
               {
@@ -130,7 +130,7 @@ export default function ReportsPage() {
               <CardHeader className="flex-row items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-sm">
-                    Recent demo reports (local only)
+                    Recent reports (local only)
                   </CardTitle>
                   <CardDescription>
                     Generated in this browser and stored in localStorage for
