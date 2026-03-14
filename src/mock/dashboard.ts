@@ -1,3 +1,9 @@
+// Thin wrapper around the unified dashboard demo data.
+export {
+  getDashboardAgents,
+  type DashboardAgentSnapshot,
+} from "./app-demo-data";
+
 export type DashboardAgentSnapshot = {
   name: string;
   label: string;

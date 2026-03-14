@@ -125,6 +125,9 @@ export interface CallSummaryMeta {
   isr_name?: string | null;
   branch?: string | null;
   contract_number?: string | null;
+  /** Demo-only fields: spoofed persona and intent from Co-pilot */
+  spoof_persona?: string;
+  spoof_intent?: string;
 }
 
 export interface CallRecord {

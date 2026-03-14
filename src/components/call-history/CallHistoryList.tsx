@@ -78,11 +78,26 @@ function getDisplayName(record: CallRecord): string {
   return "Customer";
 }
 
-/** Extract plain summary text from record; handle JSON-wrapped response, no trim */
+/** Detect if summary content is an LLM/API error message to avoid showing it to the user. */
+function isSummaryErrorText(text: string): boolean {
+  return (
+    text.includes("Error in LLM") ||
+    text.includes("BadRequestError") ||
+    text.includes("GroqException") ||
+    text.includes("tool_use_failed") ||
+    text.includes("invalid_request_error") ||
+    text.includes("failed_generation")
+  );
+}
+
+/** Extract plain summary text from record; handle JSON-wrapped response, never show error strings. */
 function getSummaryText(record: CallRecord): string {
   const raw = record.summary?.trim() || "";
   if (!raw) {
     return "No summary available.";
+  }
+  if (isSummaryErrorText(raw)) {
+    return "Summary could not be generated for this call. You can review the transcript below.";
   }
   if (raw.startsWith("{")) {
     try {
@@ -109,9 +124,10 @@ function getSummaryText(record: CallRecord): string {
     return summaryMatch[1].replace(/\\"/g, '"');
   }
   if (raw.startsWith('"') && raw.endsWith('"')) {
-    return raw.slice(1, -1).replace(/\\"/g, '"');
+    const unquoted = raw.slice(1, -1).replace(/\\"/g, '"');
+    return isSummaryErrorText(unquoted) ? "Summary could not be generated for this call. You can review the transcript below." : unquoted;
   }
-  return raw;
+  return isSummaryErrorText(raw) ? "Summary could not be generated for this call. You can review the transcript below." : raw;
 }
 
 function CallRow({ record }: { record: CallRecord }) {

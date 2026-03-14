@@ -1,42 +1,38 @@
-export type DemoReport = {
-  id: string;
-  name: string;
-  cadence: "Daily" | "Weekly" | "Monthly";
-  status: "Ready";
-  generatedAt: string;
-};
+import {
+  demoReportsSeed,
+  type DemoReport,
+  type DemoReportTemplate,
+} from "./app-demo-data";
 
 const REPORT_STORAGE_KEY = "ur_demo_reports";
 
 /**
  * Read the current list of demo reports from localStorage.
+ * Falls back to a small seeded list from the unified demo data file.
  */
 export async function getReports(): Promise<DemoReport[]> {
   if (typeof window === "undefined") {
-    return [];
+    return demoReportsSeed;
   }
   try {
     const raw = window.localStorage.getItem(REPORT_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return demoReportsSeed;
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) {
       return parsed as DemoReport[];
     }
-    return [];
+    return demoReportsSeed;
   } catch {
-    return [];
+    return demoReportsSeed;
   }
 }
 
 /**
  * Append a new report entry and return the updated list.
  */
-export async function addReport(template: {
-  name: string;
-  cadence: "Daily" | "Weekly" | "Monthly";
-}): Promise<DemoReport[]> {
+export async function addReport(template: DemoReportTemplate): Promise<DemoReport[]> {
   if (typeof window === "undefined") {
-    return [];
+    return demoReportsSeed;
   }
 
   const now = new Date();
@@ -65,4 +61,6 @@ export async function addReport(template: {
   }
   return next;
 }
+
+export type { DemoReport } from "./app-demo-data";
 

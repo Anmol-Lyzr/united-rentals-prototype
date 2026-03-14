@@ -22,6 +22,8 @@ interface SuggestionsPanelProps {
   suggestion: ResolutionSuggestion | null;
   isLoading: boolean;
   isActive: boolean;
+  /** True after at least one customer utterance is present in the transcript. */
+  hasCustomerSpoken?: boolean;
   /** When user clicks "Say this" on the whisper/read-this-out line, send as agent response (audio + text) */
   onSayWhisper?: (text: string) => void;
 }
@@ -40,6 +42,7 @@ export function SuggestionsPanel({
   suggestion,
   isLoading,
   isActive,
+  hasCustomerSpoken = false,
   onSayWhisper,
 }: SuggestionsPanelProps) {
   const s = suggestion;
@@ -48,7 +51,8 @@ export function SuggestionsPanel({
     SENTIMENT_CONFIG.neutral;
 
   const showEmpty = !isActive && !s;
-  const showWaiting = isActive && !s;
+  const showWaitingForCustomer = isActive && !s && !hasCustomerSpoken;
+  const showAnalyzing = isActive && !s && hasCustomerSpoken;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-white">
@@ -72,7 +76,16 @@ export function SuggestionsPanel({
             Start a call to receive real-time AI suggestions.
           </p>
         </div>
-      ) : showWaiting ? (
+      ) : showWaitingForCustomer ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
+          <p className="text-sm text-gray-500 text-center">
+            Waiting for the customer to speak.
+          </p>
+          <p className="text-xs text-gray-400 text-center">
+            Once the customer talks, AI suggestions will begin.
+          </p>
+        </div>
+      ) : showAnalyzing ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
           <Loader2 className="size-6 animate-spin text-primary/40" />
           <p className="text-sm text-gray-500 text-center">

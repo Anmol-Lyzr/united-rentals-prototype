@@ -3,18 +3,46 @@
 import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { CallHistoryList } from "@/components/call-history/CallHistoryList";
-import { History } from "lucide-react";
+import { History, Loader2, Database, HardDrive } from "lucide-react";
 import type { CallRecord } from "@/types/call-records";
-import { getCallHistory } from "@/mock/call-history";
+import { cn } from "@/lib/utils";
 
 export default function CallHistoryPage() {
   const [records, setRecords] = useState<CallRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<"mongodb" | null>(null);
 
   useEffect(() => {
-    void (async () => {
-      const data = await getCallHistory();
-      setRecords(data);
-    })();
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setSource(null);
+
+      try {
+        const res = await fetch("/api/call-history");
+        if (cancelled) return;
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setRecords(data);
+            setSource("mongodb");
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        if (cancelled) return;
+      }
+      setRecords([]);
+      setLoading(false);
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -35,14 +63,51 @@ export default function CallHistoryPage() {
                 Call History
               </h1>
               <p className="text-sm text-slate-500">
-                {records.length} call{records.length !== 1 ? "s" : ""} — click a
-                card to expand
+                {loading ? (
+                  "Loading…"
+                ) : (
+                  <>
+                    {records.length} call{records.length !== 1 ? "s" : ""} — click
+                    a card to expand
+                    {source && (
+                      <span
+                        className={cn(
+                          "ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                          source === "mongodb"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        )}
+                      >
+                        {source === "mongodb" ? (
+                          <>
+                            <Database className="size-3" />
+                            MongoDB
+                          </>
+                        ) : (
+                          <>
+                            <HardDrive className="size-3" />
+                            Local
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </>
+                )}
               </p>
             </div>
           </div>
         </header>
 
-        <CallHistoryList records={records} />
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center min-h-[200px]">
+            <div className="flex flex-col items-center gap-3 text-slate-500">
+              <Loader2 className="size-8 animate-spin text-indigo-500" />
+              <p className="text-sm">Loading call history…</p>
+            </div>
+          </div>
+        ) : (
+          <CallHistoryList records={records} />
+        )}
       </div>
     </div>
   );

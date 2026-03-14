@@ -300,8 +300,15 @@ function normalizeResolutionResponse(parsed: LyzrResolutionResponse): Resolution
 
 export async function sendTranscriptForResolution(
   transcript: string,
-  sessionId: string
+  sessionId: string,
+  personaLabel?: string,
+  intentValue?: string
 ): Promise<ResolutionSuggestion> {
+  const contextualMessage =
+    personaLabel || intentValue
+      ? `Customer persona: ${personaLabel ?? "Unknown"}; intent: ${intentValue ?? "unknown"}.\n\nFull transcript:\n${transcript}`
+      : transcript;
+
   const response = await fetch(API_BASE_URL, {
     method: "POST",
     headers: {
@@ -309,7 +316,7 @@ export async function sendTranscriptForResolution(
       "x-api-key": API_KEY,
     },
     body: JSON.stringify({
-      message: transcript,
+      message: contextualMessage,
       session_id: sessionId,
       user_id: DEFAULT_USER_ID,
       agent_id: RESOLUTION_AGENT_ID,
@@ -361,8 +368,15 @@ interface LyzrSummaryResponse {
   /** Alternate shape: customer object instead of account_name/account_id */
   customer?: {
     name?: string;
+    id?: string;
     contact_preference?: string;
     rental_number?: string;
+    health?: {
+      sentiment?: string;
+      retention_risk?: string;
+      nps?: number;
+      notes?: string;
+    };
   };
   job_site?: string;
   equipment_issue?: {
@@ -380,14 +394,35 @@ interface LyzrSummaryResponse {
       requested_delivery_before?: string;
     };
   };
+  /** Action items – supports legacy and new agent shapes */
   action_items?: {
-    id: number;
-    description: string;
-    owner: string;
-    deadline: string;
+    id?: number;
+    description?: string;
+    action?: string;
+    owner?: string;
+    deadline?: string;
     status?: string;
+    // New structured shape fields
+    priority?: string;
+    task?: string;
+    assigned_to?: string;
+    due_date?: string;
+    notes?: string;
   }[];
-  next_steps?: ({ step: string } | string)[];
+  /** Next steps – supports string list and structured objects */
+  next_steps?: (
+    | { step?: string; owner?: string; timeline?: string; channel?: string }
+    | {
+        step_number?: number;
+        description?: string;
+        owner?: string;
+        deadline?: string;
+        method?: string;
+        dependency?: string | null;
+        tool?: string | null;
+      }
+    | string
+  )[];
   call_categories?: {
     primary_type?: string;
     secondary_types?: string[];
@@ -401,6 +436,27 @@ interface LyzrSummaryResponse {
     risk_level?: string;
     rationale?: string;
   };
+  /** New structured summary fields */
+  interaction?: {
+    subject?: string;
+    date?: string;
+    time?: string;
+    duration_minutes?: number;
+    summary?: string;
+  };
+  equipment_details?: {
+    item?: string;
+    use_case?: string;
+    duration?: string;
+    project_start_date?: string;
+    location?: string;
+  };
+  insights?: string[];
+  sales_opportunities?: {
+    description?: string;
+    potential_equipment?: string[];
+  };
+  follow_up_requirement?: string;
   customer_update?: {
     update_applied?: boolean;
     updated_fields?: Record<string, unknown>;
@@ -422,6 +478,12 @@ export async function generateCallSummary(
   customerName?: string,
   customerAccount?: string
 ): Promise<CallRecord> {
+  console.log("[SummaryAgent] generateCallSummary start", {
+    hasTranscript: !!fullTranscript,
+    sessionId,
+    customerName,
+    customerAccount,
+  });
   const customerContext =
     customerName != null && customerName !== ""
       ? `This call was with customer: ${customerName}. Account: ${customerAccount ?? "N/A"}.\n\n`
@@ -441,12 +503,56 @@ export async function generateCallSummary(
     }),
   });
 
+  console.log("[SummaryAgent] HTTP response received", {
+    ok: response.ok,
+    status: response.status,
+  });
+
   if (!response.ok) {
     throw new Error(`Summary agent error: ${response.status}`);
   }
 
   const data = await response.json();
   const reply = extractLyzrResponse(data);
+
+  /** Detect if the reply is an LLM/API error message rather than a valid summary. */
+  const isErrorReply =
+    typeof reply === "string" &&
+    (reply.includes("Error in LLM") ||
+      reply.includes("BadRequestError") ||
+      reply.includes("tool_use_failed") ||
+      reply.includes("invalid_request_error") ||
+      reply.includes("GroqException") ||
+      reply.includes("failed_generation"));
+
+  if (isErrorReply) {
+    const fallbackId = `CALL-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const fallbackName = customerName && customerName !== "" ? customerName : "Unknown";
+    const fallbackAccount = customerAccount && customerAccount !== "" ? customerAccount : null;
+    return {
+      call_summary: {
+        call_id: fallbackId,
+        call_date: new Date().toISOString(),
+        call_duration_estimate: "—",
+        call_category: "general_inquiry",
+        customer_name: fallbackName,
+        customer_account: fallbackAccount,
+      },
+      summary: "Summary could not be generated for this call. You can review the transcript below.",
+      key_topics: [],
+      equipment_discussed: [],
+      action_items: [],
+      next_steps: [],
+      customer_health: {
+        sentiment: "neutral",
+        sentiment_triggers: [],
+        retention_risk: "none",
+      },
+      follow_up_required: false,
+      account_id: fallbackAccount ?? undefined,
+      account_name: fallbackName !== "Unknown" ? fallbackName : undefined,
+    };
+  }
 
   // Lyzr may return response as string (JSON) or already as object
   let parsed: LyzrSummaryResponse | null =
@@ -460,10 +566,16 @@ export async function generateCallSummary(
       parsed.call_record_id ??
       `CALL-${callDate.replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const customerName =
-      parsed.account_name ?? parsed.customer?.name ?? "Unknown";
-    const customerAccount =
-      parsed.account_id ?? parsed.customer?.rental_number ?? null;
+    // Prefer the explicit customer info we passed into the agent,
+    // so Call History always matches the Customer Info panel.
+    const finalCustomerName =
+      customerName && customerName !== ""
+        ? customerName
+        : parsed.account_name ?? parsed.customer?.name ?? "Unknown";
+    const finalCustomerAccount =
+      customerAccount && customerAccount !== ""
+        ? customerAccount
+        : parsed.account_id ?? parsed.customer?.rental_number ?? null;
     // Prefer explicit narrative fields from the agent; support legacy and new structured shapes.
     const interactionSummary =
       typeof (parsed as any).interaction?.summary === "string"
@@ -477,28 +589,104 @@ export async function generateCallSummary(
         ? reply
         : "");
 
+    // If the agent returned structured JSON, persist the full JSON string
+    // in the CallRecord.summary field so the Call History UI can render
+    // interaction, equipment, insights, etc. directly from it.
+    let summaryField =
+      typeof reply === "string" && reply.trim().startsWith("{")
+        ? reply
+        : narrativeSummary || "No summary generated.";
+
     const actionItems = (parsed.action_items ?? []).map((item, idx) => {
-      const raw = item as { id?: number; description?: string; action?: string; owner?: string; deadline?: string; status?: string };
-      const desc = raw.description ?? raw.action ?? "";
+      const raw = item as {
+        id?: number;
+        description?: string;
+        action?: string;
+        owner?: string;
+        deadline?: string;
+        status?: string;
+        priority?: string;
+        task?: string;
+        assigned_to?: string;
+        due_date?: string;
+        notes?: string;
+      };
+      const desc = raw.description ?? raw.action ?? raw.task ?? "";
+      if (!desc) {
+        return {
+          id: String(raw.id ?? idx + 1),
+          action: "",
+          owner: "isr" as const,
+          priority: "medium" as const,
+          deadline: "",
+          status: "pending" as const,
+          notes: raw.notes,
+        };
+      }
+      const ownerRaw = raw.owner ?? raw.assigned_to ?? "isr";
+      const deadline = raw.deadline ?? raw.due_date ?? "";
+      const priorityRaw = (raw.priority ?? "").toLowerCase();
+      const priority: "critical" | "high" | "medium" | "low" =
+        priorityRaw.includes("critical")
+          ? "critical"
+          : priorityRaw.includes("high")
+            ? "high"
+            : priorityRaw.includes("low")
+              ? "low"
+              : "medium";
       return {
         id: String(raw.id ?? idx + 1),
         action: desc,
-        owner: raw.owner ?? "isr",
-        priority: "medium" as const,
-        deadline: raw.deadline ?? "",
+        owner: mapOwner(ownerRaw),
+        priority,
+        deadline,
         status: (raw.status === "in_progress" || raw.status === "completed"
           ? raw.status
           : "pending") as "pending" | "in_progress" | "completed",
+        notes: raw.notes,
       };
     });
 
     const rawNextSteps = parsed.next_steps ?? [];
-    const nextSteps = rawNextSteps.map((ns) => ({
-      step: typeof ns === "string" ? ns : (ns as { step?: string }).step ?? "",
-      owner: "ISR",
-      timeline: "",
-      channel: "phone" as const,
-    })).filter((ns) => ns.step);
+    const nextSteps = rawNextSteps
+      .map((ns) => {
+        if (typeof ns === "string") {
+          return {
+            step: ns,
+            owner: "ISR",
+            timeline: "",
+            channel: "phone" as const,
+          };
+        }
+        const raw = ns as {
+          step?: string;
+          description?: string;
+          owner?: string;
+          timeline?: string;
+          deadline?: string;
+          method?: string;
+        };
+        const stepText = raw.step ?? raw.description ?? "";
+        if (!stepText) return { step: "", owner: "ISR", timeline: "", channel: "phone" as const };
+        const method = (raw.method ?? "").toLowerCase();
+        const channel: "phone" | "email" | "rentalman_update" | "total_control" | "in_person" =
+          method.includes("email")
+            ? "email"
+            : method.includes("phone")
+              ? "phone"
+              : method.includes("total control")
+                ? "total_control"
+                : method.includes("in-person") || method.includes("in person")
+                  ? "in_person"
+                  : "phone";
+        return {
+          step: stepText,
+          owner: raw.owner ?? "ISR",
+          timeline: raw.timeline ?? raw.deadline ?? "",
+          channel,
+        };
+      })
+      .filter((ns) => ns.step);
 
     const primaryCategory = parsed.call_categories?.primary_type ?? "general_inquiry";
     const callCategory = primaryCategory
@@ -548,8 +736,36 @@ export async function generateCallSummary(
           ]
         : [];
 
-    const sentiment = parsed.sentiment;
-    const retentionRisk = parsed.retention_risk;
+    // Prefer new-style customer.health signal, but still support legacy
+    // sentiment/retention_risk fields if they are present.
+    const customerHealth = parsed.customer?.health;
+    let sentiment = parsed.sentiment;
+    let retentionRisk = parsed.retention_risk;
+    if (customerHealth) {
+      if (!sentiment) {
+        sentiment = {
+          customer_sentiment: customerHealth.sentiment,
+          summary: customerHealth.notes,
+          score_1_to_5:
+            typeof customerHealth.nps === "number"
+              ? customerHealth.nps
+              : undefined,
+        };
+      }
+      if (!retentionRisk) {
+        retentionRisk = {
+          risk_level: customerHealth.retention_risk,
+          rationale: customerHealth.notes,
+        };
+      }
+    }
+
+    const insights =
+      Array.isArray(parsed.insights) && parsed.insights.length > 0
+        ? parsed.insights
+        : [];
+    const topicsFromCategories = parsed.call_categories?.secondary_types ?? [];
+    const keyTopics = [...topicsFromCategories, ...insights];
 
     const record: CallRecord = {
       call_summary: {
@@ -560,11 +776,11 @@ export async function generateCallSummary(
         subcategory: parsed.call_categories?.secondary_types?.[0]
           ?.toLowerCase()
           .replace(/\s+/g, "_"),
-        customer_name: customerName,
-        customer_account: customerAccount,
+        customer_name: finalCustomerName,
+        customer_account: finalCustomerAccount,
       },
-      summary: narrativeSummary || "No summary generated.",
-      key_topics: parsed.call_categories?.secondary_types ?? [],
+      summary: summaryField,
+      key_topics: keyTopics,
       equipment_discussed: equipmentDiscussed,
       action_items: actionItems,
       next_steps: nextSteps,
@@ -585,8 +801,8 @@ export async function generateCallSummary(
           : typeof rawNextSteps[0] === "string"
             ? rawNextSteps[0]
             : undefined,
-      account_id: customerAccount ?? undefined,
-      account_name: customerName !== "Unknown" ? customerName : undefined,
+      account_id: finalCustomerAccount ?? undefined,
+      account_name: finalCustomerName !== "Unknown" ? finalCustomerName : undefined,
       call_date: parsed.call_date,
       job_site: parsed.job_site,
       equipment_issue: parsed.equipment_issue
@@ -609,15 +825,27 @@ export async function generateCallSummary(
 
   // Fallback: try to extract narrative and customer from raw reply if it's JSON
   let fallbackSummary = "";
-  let fallbackName = "Unknown";
+  let fallbackName = customerName && customerName !== "" ? customerName : "Unknown";
+  const fallbackAccount = customerAccount && customerAccount !== "" ? customerAccount : null;
   if (typeof reply === "string" && reply.trim().startsWith("{")) {
     const obj = tryParseJson<{ summary?: string; call_summary?: string; account_name?: string; customer?: { name?: string } }>(reply);
     if (obj) {
       fallbackSummary = (typeof obj.summary === "string" ? obj.summary : null) ?? (typeof obj.call_summary === "string" ? obj.call_summary : null) ?? "";
-      fallbackName = obj.account_name ?? obj.customer?.name ?? "Unknown";
+      if (!fallbackName || fallbackName === "Unknown") fallbackName = obj.account_name ?? obj.customer?.name ?? "Unknown";
     }
   }
-  if (!fallbackSummary) fallbackSummary = typeof reply === "string" ? reply.slice(0, 2000) : "Summary could not be generated.";
+  if (!fallbackSummary) {
+    const rawReply = typeof reply === "string" ? reply : "";
+    const looksLikeError =
+      rawReply.includes("Error in LLM") ||
+      rawReply.includes("BadRequestError") ||
+      rawReply.includes("Exception") ||
+      rawReply.includes("tool_use_failed") ||
+      rawReply.includes("invalid_request_error");
+    fallbackSummary = rawReply && !looksLikeError
+      ? rawReply.slice(0, 2000)
+      : "Summary could not be generated for this call. You can review the transcript below.";
+  }
 
   return {
     call_summary: {
@@ -626,6 +854,7 @@ export async function generateCallSummary(
       call_duration_estimate: "Unknown",
       call_category: "general_inquiry",
       customer_name: fallbackName,
+      customer_account: fallbackAccount,
     },
     summary: fallbackSummary,
     key_topics: [],

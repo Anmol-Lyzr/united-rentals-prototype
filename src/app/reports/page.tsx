@@ -13,6 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { addReport, getReports, type DemoReport } from "@/mock/reports";
+import {
+  reportTemplates,
+  type DemoReportTemplate,
+} from "@/mock/app-demo-data";
 
 export default function ReportsPage() {
   const [reports, setReports] = useState<DemoReport[]>([]);
@@ -27,10 +31,7 @@ export default function ReportsPage() {
     })();
   }, []);
 
-  const handleGenerate = (template: {
-    name: string;
-    cadence: "Daily" | "Weekly" | "Monthly";
-  }) => {
+  const handleGenerate = (template: DemoReportTemplate) => {
     void (async () => {
       const updated = await addReport(template);
       setReports(updated);
@@ -68,7 +69,7 @@ export default function ReportsPage() {
           </div>
           <Button
             size="sm"
-            className="gap-2 bg-[#6366f1] hover:bg-[#4f46e5] text-white"
+            className="gap-2 rounded-full bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-sm"
           >
             <Plus className="size-4" />
             Custom Report
@@ -77,26 +78,7 @@ export default function ReportsPage() {
 
         <main className="flex-1 min-h-0 overflow-auto bg-slate-50 px-6 py-5 space-y-5">
           <section className="grid gap-4 md:grid-cols-3">
-            {[
-              {
-                name: "Daily Call Summary",
-                description:
-                  "Overview of all support calls assisted by the Co-Pilot.",
-                cadence: "Daily · PDF",
-              },
-              {
-                name: "Weekly Channel Performance",
-                description:
-                  "Compare call volume and AI resolution across time windows.",
-                cadence: "Weekly · Excel",
-              },
-              {
-                name: "Customer Satisfaction Snapshot",
-                description:
-                  "CSAT distribution for calls handled with the ISR Co-Pilot.",
-                cadence: "Monthly · PDF",
-              },
-            ].map((tpl) => (
+            {reportTemplates.map((tpl) => (
               <Card key={tpl.name} className="shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-sm">
@@ -111,7 +93,9 @@ export default function ReportsPage() {
                   <CardDescription>{tpl.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex items-center justify-between text-xs text-slate-500">
-                  <span>{tpl.cadence}</span>
+                  <span>
+                    {tpl.cadence} &middot; {tpl.format}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"

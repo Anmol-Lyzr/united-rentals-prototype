@@ -90,10 +90,10 @@ export default function IntegrationsPage() {
                   onClick={() =>
                     setSelectedCategory(cat as "All" | DemoIntegration["category"])
                   }
-                  className={`px-3 py-1 rounded-full border text-xs ${
+                  className={`px-3 py-1 rounded-full border text-xs transition-all duration-150 ${
                     selectedCategory === cat
                       ? "bg-[#6366f1] border-[#6366f1] text-white shadow-sm"
-                      : "bg-white border-slate-200 text-slate-600"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-[#6366f1]/40 hover:text-slate-800"
                   }`}
                 >
                   {cat}

@@ -23,11 +23,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { CallRecord } from "@/types/call-records";
 import { format, isSameDay, subDays } from "date-fns";
-import { getCallHistory } from "@/mock/call-history";
 import {
   getDashboardAgents,
   type DashboardAgentSnapshot,
-} from "@/mock/dashboard";
+  demoAnalyticsSnapshot,
+} from "@/mock/app-demo-data";
 
 function parseDurationMinutes(estimate?: string): number | null {
   if (!estimate) return null;
@@ -35,6 +35,25 @@ function parseDurationMinutes(estimate?: string): number | null {
   if (!match) return null;
   const num = Number.parseFloat(match[1]);
   return Number.isFinite(num) ? num : null;
+}
+
+async function getCallHistory(): Promise<CallRecord[]> {
+  try {
+    const response = await fetch("/api/call-history", {
+      method: "GET",
+    });
+    if (!response.ok) {
+      console.error("[Dashboard] Failed to fetch call history", {
+        status: response.status,
+      });
+      return [];
+    }
+    const data = (await response.json()) as CallRecord[];
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error("[Dashboard] Error fetching call history", error);
+    return [];
+  }
 }
 
 export default function DashboardPage() {
@@ -60,15 +79,26 @@ export default function DashboardPage() {
     volumeSeries,
     volumeMax,
   } = useMemo(() => {
+    // If we don't yet have any real call history, fall back to the
+    // unified demo snapshot so the dashboard always looks \"alive\".
     if (!records.length) {
+      const demo = demoAnalyticsSnapshot;
+      const series = demo.volume.map((point) => ({
+        day: new Date(point.date),
+        count: point.total,
+      }));
+      const max = series.reduce((m, p) => (p.count > m ? p.count : m), 0);
+      const todayCalls = demo.volume[demo.volume.length - 1]?.total ?? 0;
       return {
-        totalConversations: 0,
-        resolvedCount: 0,
-        todayCalls: 0,
-        aiResolutionRate: 0,
-        avgHandleMinutes: 0,
-        volumeSeries: [] as { day: Date; count: number }[],
-        volumeMax: 0,
+        totalConversations: demo.totalConversations,
+        resolvedCount: Math.round(
+          (demo.totalConversations * demo.aiResolutionRate) / 100
+        ),
+        todayCalls,
+        aiResolutionRate: demo.aiResolutionRate,
+        avgHandleMinutes: demo.avgHandleMinutes,
+        volumeSeries: series,
+        volumeMax: max,
       };
     }
 

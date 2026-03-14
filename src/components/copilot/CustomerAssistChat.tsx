@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,11 @@ export function CustomerAssistChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [nextId, setNextId] = useState(1);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const send = (text: string) => {
     const trimmed = text.trim();
@@ -47,6 +52,7 @@ export function CustomerAssistChat({
       text: answerText,
     };
     setNextId(nextId + 2);
+    // Question on top, answer below (answer appears just above chat box)
     setMessages((prev) => [...prev, userMessage, answer]);
     setInput("");
   };
@@ -56,14 +62,33 @@ export function CustomerAssistChat({
   };
 
   return (
-    <section className="flex flex-col h-full min-h-0 bg-gradient-to-b from-[#eef2ff] via-white to-white">
-      {/* Chat history */}
-      <div className="mt-3 flex-1 min-h-0 px-4 pb-3 overflow-y-auto space-y-2 text-xs">
+    <section className="flex flex-col h-full min-h-0 bg-gradient-to-b from-slate-50/80 via-white to-white">
+      {/* Quick questions at top — capped height so chat area stays visible */}
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-slate-200/60 max-h-[38%] min-h-0 flex flex-col">
+        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-2.5 shrink-0">
+          Quick questions
+        </p>
+        <div className="flex flex-wrap gap-2 overflow-y-auto min-h-0">
+          {CUSTOMER_ASSIST_QUICK_ACTIONS.map((label) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => quickAsk(label)}
+              className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-medium text-slate-600 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/70 hover:text-indigo-800 active:scale-[0.98] transition-all duration-200"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat history — responses visible here, just above the chat box */}
+      <div className="flex-1 min-h-[160px] px-4 py-3 overflow-y-auto space-y-2.5 text-xs">
         {messages.length === 0 && (
-          <p className="mt-4 text-center text-slate-500">
+          <p className="pt-6 text-center text-slate-400 text-[11px] leading-relaxed">
             {customerContext?.name && showCustomerContextHint
               ? `Ask about rates, off-rent, delivery, RPP, or "${customerContext.name}"'s active rentals.`
-              : "Start by choosing a quick question above or type your own below."}
+              : "Pick a quick question above or type your own in the box below."}
           </p>
         )}
         {messages.map((m) => (
@@ -74,10 +99,10 @@ export function CustomerAssistChat({
             }`}
           >
             <div
-              className={`max-w-[95%] rounded-2xl px-3 py-2 ${
+              className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 ${
                 m.role === "user"
-                  ? "bg-[#6366f1] text-white"
-                  : "bg-white text-slate-900 border border-[#e5e7eb]"
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "bg-white text-slate-800 border border-slate-200/80 shadow-sm"
               } ${m.role === "assistant" ? "" : "whitespace-pre-wrap"}`}
             >
               {m.role === "assistant" ? (
@@ -95,26 +120,12 @@ export function CustomerAssistChat({
             </div>
           </div>
         ))}
+        <div ref={chatEndRef} />
       </div>
 
-      {/* Quick actions row (search shortcuts) */}
-      <div className="px-4 pb-2 pt-1 border-t border-[#e5e7eb] bg-white/90 flex flex-wrap gap-2 text-[11px] text-slate-700">
-        {CUSTOMER_ASSIST_QUICK_ACTIONS.map((label) => (
-          <Button
-            key={label}
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 rounded-full border-[#e5e7eb] bg-white px-3 py-0 text-[11px] shadow-xs"
-            onClick={() => quickAsk(label)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-
+      {/* Chat box — answer appears just above this */}
       <form
-        className="px-4 pb-3 pt-2 border-t border-[#e5e7eb] bg-white flex items-center gap-2"
+        className="shrink-0 px-4 pb-4 pt-3 border-t border-slate-200/60 bg-white/95 flex items-center gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           send(input);
@@ -124,12 +135,12 @@ export function CustomerAssistChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask the knowledge base..."
-          className="h-9 rounded-full border-[#e5e7eb] bg-white text-xs text-slate-900 placeholder:text-slate-400"
+          className="h-10 flex-1 rounded-xl border border-slate-200 bg-slate-50/50 text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-indigo-200/60 focus-visible:border-indigo-300 focus-visible:bg-white transition-all"
         />
         <Button
           type="submit"
           size="icon"
-          className="h-9 w-9 rounded-full bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-sm"
+          className="h-10 w-10 shrink-0 rounded-xl bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-indigo-300 transition-all duration-200"
         >
           <Send className="size-4" />
         </Button>

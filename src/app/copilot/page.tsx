@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Mic } from "lucide-react";
+import { Mic, ChevronRight, ChevronLeft } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { CallControls } from "@/components/copilot/CallControls";
 import { TranscriptFeed } from "@/components/copilot/TranscriptFeed";
@@ -25,6 +25,7 @@ import { useAgentSpeechCapture } from "@/hooks/useAgentSpeechCapture";
 import type {
   TranscriptEntry,
   ResolutionSuggestion,
+  CallRecord,
 } from "@/types/call-records";
 
 type AiCustomerInsights = {
@@ -39,10 +40,10 @@ const MAX_TURNS = 5;
 const FALLBACK_CUSTOMER_DECLINE = "No thank you.";
 
 export const SPOOF_PERSONAS = [
+  { value: "happy_customer", label: "Happy customer" },
   { value: "angry_customer", label: "Angry customer" },
   { value: "confused_customer", label: "Confused customer" },
   { value: "neutral_customer", label: "Neutral customer" },
-  { value: "happy_customer", label: "Happy customer" },
 ] as const;
 
 export const SPOOF_INTENTS = [
@@ -62,6 +63,40 @@ export const SPOOF_INTENTS = [
   { value: "competitor_mention", label: "Competitor mention" },
   { value: "multi_topic", label: "Multi-topic call" },
 ] as const;
+
+// Make intent selection feel more natural per persona by biasing
+// each persona toward a subset of likely intents while still randomizing.
+const PERSONA_INTENT_POOLS: Record<string, string[]> = {
+  happy_customer: [
+    "new_reservation",
+    "delivery_scheduling",
+    "rpp_question",
+    "rental_extension",
+    "equipment_swap",
+    "multi_topic",
+  ],
+  angry_customer: [
+    "invoice_dispute",
+    "billing_inquiry",
+    "equipment_troubleshooting",
+    "competitor_mention",
+    "off_rent",
+  ],
+  confused_customer: [
+    "equipment_troubleshooting",
+    "account_setup",
+    "total_control_support",
+    "operator_certification",
+    "multi_topic",
+  ],
+  neutral_customer: [
+    "new_reservation",
+    "delivery_scheduling",
+    "off_rent",
+    "rental_extension",
+    "branch_transfer",
+  ],
+};
 
 function buildSpoofInitialMessage(
   persona: string,
@@ -102,19 +137,31 @@ export default function CoPilotPage() {
   const [sessionId, setSessionId] = useState(() =>
     generateSessionId("copilot")
   );
-  const [selectedPersona, setSelectedPersona] = useState<string>(SPOOF_PERSONAS[0].value);
-  const [selectedIntent, setSelectedIntent] = useState<string>(SPOOF_INTENTS[0].value);
+  const [selectedPersona, setSelectedPersona] =
+    useState<string>("happy_customer");
+  const [selectedIntent, setSelectedIntent] = useState<string>(
+    SPOOF_INTENTS[0].value
+  );
   const [summarySaved, setSummarySaved] = useState(false);
   const [customInput, setCustomInput] = useState("");
   const [rightPanelTab, setRightPanelTab] = useState<"chat" | "info">("chat");
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [isCustomerInfoAvailable, setIsCustomerInfoAvailable] =
     useState(false);
+  const [currentCallRecord, setCurrentCallRecord] = useState<CallRecord | null>(
+    null
+  );
+  const [currentCustomerName, setCurrentCustomerName] = useState<string | undefined>(undefined);
+  const [currentCustomerAccount, setCurrentCustomerAccount] = useState<string | undefined>(undefined);
+  const [hasCustomerSpoken, setHasCustomerSpoken] = useState(false);
 
   const spoofLoopAbortedRef = useRef(false);
   const sessionIdRef = useRef(sessionId);
   const spoofSessionIdRef = useRef("");
   const transcriptRef = useRef<TranscriptEntry[]>([]);
+  /** Customer name and account from Customer Info, captured when the call starts; used when saving to Call History */
+  const callCustomerNameRef = useRef<string | undefined>(undefined);
+  const callCustomerAccountRef = useRef<string | undefined>(undefined);
 
   const agentSpeech = useAgentSpeechCapture();
 
@@ -136,9 +183,50 @@ export default function CoPilotPage() {
       if (entry.speaker === "customer" && !isCustomerInfoAvailable) {
         setIsCustomerInfoAvailable(true);
       }
+      if (entry.speaker === "customer") {
+        setHasCustomerSpoken(true);
+      }
     },
     [isCustomerInfoAvailable]
   );
+
+  const resolveCustomerFromPanel = useCallback(() => {
+    if (currentCallRecord) {
+      const meta = currentCallRecord.call_summary;
+      const name =
+        meta.customer_name ||
+        currentCallRecord.account_name ||
+        "United Rentals Customer";
+      const account =
+        meta.customer_account ?? currentCallRecord.account_id ?? undefined;
+      console.log("[CoPilot] resolveCustomerFromPanel from currentCallRecord", {
+        name,
+        account,
+      });
+      return { name, account };
+    }
+
+    const personaLabel =
+      SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label ?? null;
+    const personaProfile = personaLabel
+      ? getCustomerInfoForPersona(personaLabel)
+      : null;
+    if (personaProfile) {
+      console.log("[CoPilot] resolveCustomerFromPanel from personaProfile", {
+        name: personaProfile.name,
+        account: personaProfile.account,
+      });
+      return {
+        name: personaProfile.name,
+        account: personaProfile.account ?? undefined,
+      };
+    }
+
+    console.log(
+      "[CoPilot] resolveCustomerFromPanel falling back to generic customer"
+    );
+    return { name: "Customer", account: undefined as string | undefined };
+  }, [currentCallRecord, selectedPersona]);
 
   const updateAiInsightsFromSuggestion = useCallback(
     (s: ResolutionSuggestion | null) => {
@@ -297,7 +385,9 @@ export default function CoPilotPage() {
         try {
           const resolutionResult = await sendTranscriptForResolution(
             fullText,
-            sid
+            sid,
+            SPOOF_PERSONAS.find((p) => p.value === persona)?.label,
+            intent
           );
           if (resolutionResult) {
             setSuggestion(resolutionResult);
@@ -372,12 +462,15 @@ export default function CoPilotPage() {
     };
     transcriptRef.current = [...transcriptRef.current, entry];
     setTranscriptEntries([...transcriptRef.current]);
+    setHasCustomerSpoken(true);
     setCustomInput("");
     const fullText = transcriptRef.current
       .map((e) => `${e.speaker}: ${e.text}`)
       .join("\n");
     setIsSuggestionsLoading(true);
-    sendTranscriptForResolution(fullText, sessionId)
+    const personaLabel =
+      SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label;
+    sendTranscriptForResolution(fullText, sessionId, personaLabel, selectedIntent)
       .then((result) => {
         if (result) {
           setSuggestion(result);
@@ -387,6 +480,88 @@ export default function CoPilotPage() {
       .catch((err) => console.error("Resolution agent error:", err))
       .finally(() => setIsSuggestionsLoading(false));
   }, [customInput, callStatus, sessionId, updateAiInsightsFromSuggestion]);
+
+  const saveCallAndGetSummary = useCallback(
+    async (
+      fullTranscript: string,
+      sid: string,
+      customerName?: string,
+      customerAccount?: string,
+      spoofPersonaLabel?: string,
+      spoofIntent?: string
+    ) => {
+      try {
+        console.log("[CoPilot] saveCallAndGetSummary starting", {
+          sessionId: sid,
+          hasTranscript: !!fullTranscript,
+          customerName,
+          customerAccount,
+        });
+        // First, call the Summary Agent directly from the browser so it is visible
+        // in the Network tab and we can inspect the payload/response.
+        const summary = await generateCallSummary(
+          fullTranscript,
+          sid,
+          customerName,
+          customerAccount
+        );
+        if (spoofPersonaLabel) {
+          summary.call_summary.spoof_persona = spoofPersonaLabel;
+        }
+        if (spoofIntent) {
+          summary.call_summary.spoof_intent = spoofIntent;
+        }
+        // Force customer name/account to match Customer Info (persona) so Call History shows the same name
+        if (customerName != null && customerName !== "") {
+          summary.call_summary.customer_name = customerName;
+          summary.account_name = customerName;
+        }
+        if (customerAccount != null && customerAccount !== "") {
+          summary.call_summary.customer_account = customerAccount;
+          summary.account_id = customerAccount;
+        }
+        console.log("[CoPilot] generateCallSummary completed", {
+          callId: summary.call_summary.call_id,
+          customerName: summary.call_summary.customer_name,
+          customerAccount: summary.call_summary.customer_account,
+        });
+
+        // Then, persist the summary (and transcript) to MongoDB via our API route.
+        const res = await fetch("/api/call-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: fullTranscript,
+            sessionId: sid,
+            customerName: customerName ?? undefined,
+            customerAccount: customerAccount ?? undefined,
+            callRecord: summary,
+            spoofPersona: spoofPersonaLabel ?? undefined,
+            spoofIntent: spoofIntent ?? undefined,
+          }),
+        });
+        if (res.ok) {
+          const record = await res.json();
+          console.log("[CoPilot] saveCallAndGetSummary received record from API", {
+            callId: record?.call_summary?.call_id,
+            customerName: record?.call_summary?.customer_name,
+            customerAccount: record?.call_summary?.customer_account,
+          });
+          // Prefer the server-confirmed record (with stored_transcript, createdAt, etc.)
+          return record;
+        }
+        console.error("[CoPilot] saveCallAndGetSummary API error", {
+          status: res.status,
+        });
+        // Even if the API call fails, return the summary from the agent so UI can still show it.
+        return summary;
+      } catch (err) {
+        console.error("[CoPilot] saveCallAndGetSummary failed", err);
+      }
+      throw new Error("Failed to save call history via API");
+    },
+    []
+  );
 
   const handleCallResolved = useCallback(
     async (transcript: TranscriptEntry[]) => {
@@ -400,38 +575,43 @@ export default function CoPilotPage() {
         .map((e) => `${e.speaker}: ${e.text}`)
         .join("\n");
       const sid = sessionIdRef.current;
-      const personaProfile = getCustomerInfoForPersona(
-        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
-      );
-      generateCallSummary(
-        fullTranscript,
-        sid,
-        personaProfile?.name,
-        personaProfile?.account
-      )
-        .then((summary) => {
-          // Ensure customer name on summary matches the active persona profile
-          if (personaProfile) {
-            summary.call_summary.customer_name = personaProfile.name;
-            summary.call_summary.customer_account =
-              personaProfile.account ?? summary.call_summary.customer_account;
-            summary.account_name = personaProfile.name;
-            if (personaProfile.account) {
-              summary.account_id = personaProfile.account;
-            }
-          }
-          const existing = JSON.parse(
-            localStorage.getItem("ur_call_history") ?? "[]"
-          );
-          existing.unshift(summary);
-          localStorage.setItem("ur_call_history", JSON.stringify(existing));
-          setSummarySaved(true);
-        })
-        .catch((err) => {
-          console.error("Summary generation failed:", err);
+      // Use customer name and account saved from Customer Info when the call started
+      const savedName = callCustomerNameRef.current;
+      const savedAccount = callCustomerAccountRef.current;
+      const personaLabel =
+        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label;
+      setCurrentCustomerName(savedName);
+      setCurrentCustomerAccount(savedAccount);
+      try {
+        const summary = await saveCallAndGetSummary(
+          fullTranscript,
+          sid,
+          savedName,
+          savedAccount,
+          personaLabel,
+          selectedIntent
+        );
+        console.log("[CoPilot] handleCallResolved summary received", {
+          callId: summary?.call_summary?.call_id,
+          customerName: summary?.call_summary?.customer_name,
+          customerAccount: summary?.call_summary?.customer_account,
         });
+        if (savedName) {
+          summary.call_summary.customer_name = savedName;
+          summary.account_name = savedName;
+        }
+        if (savedAccount) {
+          summary.call_summary.customer_account =
+            savedAccount ?? summary.call_summary.customer_account;
+          summary.account_id = savedAccount;
+        }
+        setCurrentCallRecord(summary);
+        setSummarySaved(true);
+      } catch (err) {
+        console.error("Summary generation failed:", err);
+      }
     },
-    [selectedPersona]
+    [saveCallAndGetSummary, selectedPersona, selectedIntent]
   );
 
   const handleStartCall = useCallback(() => {
@@ -444,15 +624,38 @@ export default function CoPilotPage() {
     setCustomInput("");
     spoofLoopAbortedRef.current = false;
     setIsCustomerInfoAvailable(false);
+    setHasCustomerSpoken(false);
     setRightPanelTab("chat");
 
-    // Randomly select persona and intent for this incoming call
+    // Randomly select persona and intent for this incoming call.
+    // Persona is fully random; intent is randomly chosen from a persona-specific pool
+    // (falling back to all intents if no pool is defined).
+    const personaValues = SPOOF_PERSONAS.map((p) => p.value);
+    const allIntentValues = SPOOF_INTENTS.map((i) => i.value);
     const randomPersona =
-      SPOOF_PERSONAS[Math.floor(Math.random() * SPOOF_PERSONAS.length)].value;
+      personaValues.length > 0
+        ? personaValues[Math.floor(Math.random() * personaValues.length)]
+        : selectedPersona;
+    const personaPool =
+      PERSONA_INTENT_POOLS[randomPersona] && PERSONA_INTENT_POOLS[randomPersona].length > 0
+        ? PERSONA_INTENT_POOLS[randomPersona]
+        : allIntentValues;
     const randomIntent =
-      SPOOF_INTENTS[Math.floor(Math.random() * SPOOF_INTENTS.length)].value;
+      personaPool.length > 0
+        ? personaPool[Math.floor(Math.random() * personaPool.length)]
+        : selectedIntent;
     setSelectedPersona(randomPersona);
     setSelectedIntent(randomIntent);
+
+    // Save customer name and account from Customer Info (persona) for this call so Call History uses the same
+    const personaLabelForCall =
+      SPOOF_PERSONAS.find((p) => p.value === randomPersona)?.label;
+    const profileForCall = personaLabelForCall
+      ? getCustomerInfoForPersona(personaLabelForCall)
+      : null;
+    callCustomerNameRef.current = profileForCall?.name ?? undefined;
+    callCustomerAccountRef.current =
+      profileForCall?.account ?? undefined;
 
     const newSessionId = generateSessionId("copilot");
     const newSpoofSessionId = generateSessionId("spoof");
@@ -461,13 +664,8 @@ export default function CoPilotPage() {
     spoofSessionIdRef.current = newSpoofSessionId;
     setCallStatus("active");
     const isrName = "Sarah";
-    runCallLoop(
-      randomPersona,
-      randomIntent,
-      isrName,
-      handleCallResolved
-    );
-  }, [runCallLoop, handleCallResolved]);
+    runCallLoop(randomPersona, randomIntent, isrName, handleCallResolved);
+  }, [runCallLoop, handleCallResolved, selectedPersona, selectedIntent]);
 
   const handleEndCall = useCallback(() => {
     spoofLoopAbortedRef.current = true;
@@ -478,30 +676,37 @@ export default function CoPilotPage() {
       const fullTranscript = transcriptEntries
         .map((e) => `${e.speaker}: ${e.text}`)
         .join("\n");
-      const personaProfile = getCustomerInfoForPersona(
-        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label
-      );
-      generateCallSummary(
+      const personaLabel =
+        SPOOF_PERSONAS.find((p) => p.value === selectedPersona)?.label;
+      // Use customer name and account saved from Customer Info when the call started
+      const savedName = callCustomerNameRef.current;
+      const savedAccount = callCustomerAccountRef.current;
+      setCurrentCustomerName(savedName);
+      setCurrentCustomerAccount(savedAccount);
+      saveCallAndGetSummary(
         fullTranscript,
         sessionId,
-        personaProfile?.name,
-        personaProfile?.account
+        savedName,
+        savedAccount,
+        personaLabel,
+        selectedIntent
       )
         .then((summary) => {
-          if (personaProfile) {
-            summary.call_summary.customer_name = personaProfile.name;
-            summary.call_summary.customer_account =
-              personaProfile.account ?? summary.call_summary.customer_account;
-            summary.account_name = personaProfile.name;
-            if (personaProfile.account) {
-              summary.account_id = personaProfile.account;
-            }
+          console.log("[CoPilot] handleEndCall summary received", {
+            callId: summary?.call_summary?.call_id,
+            customerName: summary?.call_summary?.customer_name,
+            customerAccount: summary?.call_summary?.customer_account,
+          });
+          if (savedName) {
+            summary.call_summary.customer_name = savedName;
+            summary.account_name = savedName;
           }
-          const existing = JSON.parse(
-            localStorage.getItem("ur_call_history") ?? "[]"
-          );
-          existing.unshift(summary);
-          localStorage.setItem("ur_call_history", JSON.stringify(existing));
+          if (savedAccount) {
+            summary.call_summary.customer_account =
+              savedAccount ?? summary.call_summary.customer_account;
+            summary.account_id = savedAccount;
+          }
+          setCurrentCallRecord(summary);
           setSummarySaved(true);
         })
         .catch((err) => {
@@ -511,7 +716,7 @@ export default function CoPilotPage() {
     } else {
       setCallStatus("ended");
     }
-  }, [transcriptEntries, sessionId, agentSpeech]);
+  }, [transcriptEntries, sessionId, agentSpeech, selectedPersona, saveCallAndGetSummary]);
 
   const handleNewCall = useCallback(() => {
     setCallStatus("ringing");
@@ -522,6 +727,7 @@ export default function CoPilotPage() {
     setSummarySaved(false);
     setSessionId(generateSessionId("copilot"));
     setIsCustomerInfoAvailable(false);
+    setHasCustomerSpoken(false);
     setRightPanelTab("chat");
   }, []);
 
@@ -675,6 +881,7 @@ export default function CoPilotPage() {
                 suggestion={suggestion}
                 isLoading={isSuggestionsLoading}
                 isActive={callStatus === "active"}
+                hasCustomerSpoken={hasCustomerSpoken}
                 onSayWhisper={callStatus === "active" ? handleSayWhisper : undefined}
               />
             </div>
@@ -682,38 +889,38 @@ export default function CoPilotPage() {
             {/* Right panel: slide-out drawer with Chat Assist / Info tabs */}
             <div className="shrink-0 h-full flex items-stretch">
               {isRightPanelCollapsed ? (
-                /* Collapsed: only thin bar on the far right */
+                /* Collapsed: elegant rail to expand panel */
                 <button
                   type="button"
                   onClick={() => setIsRightPanelCollapsed(false)}
-                  className="h-full w-6 flex items-center justify-center bg-[#6366f1] text-[11px] text-white border border-[#6366f1] rounded-l-none rounded-r-xl shadow-[0_10px_30px_rgba(79,70,229,0.6)]"
+                  className="h-full w-8 flex items-center justify-center bg-indigo-600 text-white rounded-l-2xl shadow-lg hover:bg-indigo-700 hover:shadow-xl transition-all duration-200"
                   aria-label="Expand assistant panel"
                 >
-                  &lt;
+                  <ChevronLeft className="size-4" />
                 </button>
               ) : (
                 /* Expanded: full drawer */
                 <div className="relative w-[360px] h-full">
                   <div className="h-full w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-white flex flex-col shadow-[0_18px_40px_rgba(148,163,184,0.5)]">
-                    {/* Header: small slide button + tabs */}
-                    <div className="px-4 pt-3 pb-2 border-b border-[#e5e7eb] bg-white">
+                    {/* Header: collapse button + tabs */}
+                    <div className="px-4 pt-3 pb-2 border-b border-slate-200/80 bg-white">
                       <div className="flex items-center justify-between gap-3">
                         <button
                           type="button"
                           onClick={() => setIsRightPanelCollapsed(true)}
-                          className="inline-flex items-center justify-center rounded-lg border border-[#6366f1] bg-[#6366f1] px-2 py-1 text-[11px] text-white shadow-sm hover:bg-[#4f46e5]"
+                          className="inline-flex items-center justify-center size-9 rounded-xl bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all duration-200"
                           aria-label="Collapse assistant panel"
                         >
-                          &gt;
+                          <ChevronRight className="size-4" />
                         </button>
-                        <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
+                        <div className="inline-flex rounded-xl bg-slate-100/80 p-1 text-[11px]">
                           <button
                             type="button"
                             onClick={() => setRightPanelTab("chat")}
-                            className={`inline-flex items-center justify-center gap-1 rounded-full px-3 py-1 font-medium ${
+                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 font-medium transition-all duration-200 ${
                               rightPanelTab === "chat"
-                                ? "bg-[#6366f1] text-white"
-                                : "text-slate-500"
+                                ? "bg-white text-indigo-700 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
                             }`}
                           >
                             Chat Assist
@@ -722,10 +929,10 @@ export default function CoPilotPage() {
                             <button
                               type="button"
                               onClick={() => setRightPanelTab("info")}
-                              className={`inline-flex items-center justify-center gap-1 rounded-full px-3 py-1 font-medium ${
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 font-medium transition-all duration-200 ${
                                 rightPanelTab === "info"
-                                  ? "bg-[#6366f1] text-white"
-                                  : "text-slate-500"
+                                  ? "bg-white text-indigo-700 shadow-sm"
+                                  : "text-slate-500 hover:text-slate-700"
                               }`}
                             >
                               Customer Info
@@ -739,7 +946,7 @@ export default function CoPilotPage() {
                     <div className="flex-1 min-h-0 overflow-y-auto">
                       {rightPanelTab === "info" && isCustomerInfoAvailable ? (
                         <CustomerInfoCard
-                          record={undefined}
+                          record={currentCallRecord ?? undefined}
                           personaLabel={
                             SPOOF_PERSONAS.find((p) => p.value === selectedPersona)
                               ?.label
