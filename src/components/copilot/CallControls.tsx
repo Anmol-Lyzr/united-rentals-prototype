@@ -110,7 +110,7 @@ export function CallControls({
             >
               <Phone className="size-4" />
               <span className="text-sm font-semibold">
-                {callStatus === "ended" ? "New Call" : "Pick up now"}
+                {callStatus === "ended" ? "New Call" : "Pick up"}
               </span>
             </Button>
             <Button

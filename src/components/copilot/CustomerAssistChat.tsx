@@ -5,7 +5,7 @@ import { Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CUSTOMER_ASSIST_QUICK_ACTIONS } from "@/constants/quick-actions";
-import { buildKbAnswer, type CustomerContext } from "@/lib/kb-assist";
+import type { CustomerContext } from "@/lib/kb-assist";
 
 type ChatMessage = {
   id: number;
@@ -13,11 +13,72 @@ type ChatMessage = {
   text: string;
 };
 
-/** Simple formatting for KB answers: **bold** and newlines. */
-function formatKbText(text: string): string {
+type ChatAssistStructuredResponse = {
+  Summary?: string;
+  "Key points"?: string[];
+  "Action steps (system)"?: string[];
+  "Caveats / policy notes"?: string[];
+};
+
+type ChatAssistApiResponse = {
+  structured: ChatAssistStructuredResponse | null;
+  raw: string;
+  error?: string;
+};
+
+function generateSessionId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function escapeHtml(text: string): string {
   return text
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n/g, "<br />");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderStructuredToHtml(
+  structured: ChatAssistStructuredResponse | null,
+  raw: string
+): string {
+  if (!structured) {
+    return escapeHtml(raw || "I couldn't generate a structured answer right now.");
+  }
+
+  const parts: string[] = [];
+  const pushSection = (title: string, bodyHtml: string) => {
+    if (!bodyHtml) return;
+    parts.push(`<div><strong>${escapeHtml(title)}</strong></div>`);
+    parts.push(bodyHtml);
+  };
+
+  const summary = structured.Summary?.trim();
+  if (summary) {
+    pushSection("Summary", `<div>${escapeHtml(summary)}</div>`);
+  }
+
+  const keyPoints = structured["Key points"]?.filter(Boolean) ?? [];
+  if (keyPoints.length) {
+    pushSection(
+      "Key points",
+      `<ul>${keyPoints
+        .map((x) => `<li>${escapeHtml(String(x))}</li>`)
+        .join("")}</ul>`
+    );
+  }
+
+  // Intentionally hidden in the chatbox UI:
+  // - "Action steps (system)"
+  // - "Caveats / policy notes"
+  // We still fetch them (for potential future UI use), but we don't display them here.
+
+  if (parts.length === 0) {
+    return escapeHtml(raw || "I couldn't generate a structured answer right now.");
+  }
+
+  return parts.join("\n");
 }
 
 export function CustomerAssistChat({
@@ -31,6 +92,8 @@ export function CustomerAssistChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [nextId, setNextId] = useState(1);
+  const [isSending, setIsSending] = useState(false);
+  const [sessionId, setSessionId] = useState<string>("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const showQuickQuestions = messages.length === 0;
 
@@ -38,28 +101,88 @@ export function CustomerAssistChat({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const send = (text: string) => {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = "ur_chat_assist_session_id";
+    const existing = window.sessionStorage.getItem(key);
+    if (existing) {
+      setSessionId(existing);
+      return;
+    }
+    const created = generateSessionId("chatassist");
+    window.sessionStorage.setItem(key, created);
+    setSessionId(created);
+  }, []);
+
+  const send = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || isSending) return;
+    let sid = sessionId;
+    if (!sid && typeof window !== "undefined") {
+      const key = "ur_chat_assist_session_id";
+      sid = window.sessionStorage.getItem(key) || "";
+      if (!sid) {
+        sid = generateSessionId("chatassist");
+        window.sessionStorage.setItem(key, sid);
+      }
+      setSessionId(sid);
+    }
     const userMessage: ChatMessage = {
       id: nextId,
       role: "user",
       text: trimmed,
     };
-    const answerText = buildKbAnswer(trimmed, customerContext);
-    const answer: ChatMessage = {
+    const assistantPlaceholder: ChatMessage = {
       id: nextId + 1,
       role: "assistant",
-      text: answerText,
+      text: "Thinking…",
     };
     setNextId(nextId + 2);
-    // Question on top, answer below (answer appears just above chat box)
-    setMessages((prev) => [...prev, userMessage, answer]);
+    setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
     setInput("");
+
+    setIsSending(true);
+    try {
+      const res = await fetch("/api/chat-assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmed,
+          sessionId: sid || generateSessionId("chatassist"),
+          customerContext: customerContext ?? null,
+        }),
+      });
+      const data = (await res.json()) as ChatAssistApiResponse;
+      const raw = typeof data?.raw === "string" ? data.raw : "";
+      const html = renderStructuredToHtml(data?.structured ?? null, raw);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantPlaceholder.id
+            ? { ...m, text: html }
+            : m
+        )
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantPlaceholder.id
+            ? {
+                ...m,
+                text: escapeHtml(
+                  `Sorry — I couldn't reach the assistant right now. ${msg ? `(${msg})` : ""}`
+                ),
+              }
+            : m
+        )
+      );
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const quickAsk = (text: string) => {
-    send(text);
+    void send(text);
   };
 
   return (
@@ -89,9 +212,9 @@ export function CustomerAssistChat({
             >
               {m.role === "assistant" ? (
                 <span
-                  className="text-[11px] leading-relaxed [&_strong]:font-semibold"
+                  className="text-[11px] leading-relaxed [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:my-1"
                   dangerouslySetInnerHTML={{
-                    __html: formatKbText(m.text),
+                    __html: m.text,
                   }}
                 />
               ) : (
@@ -131,21 +254,27 @@ export function CustomerAssistChat({
         className="shrink-0 px-4 pb-4 pt-3 border-t border-slate-200/60 bg-white/95 flex items-center gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
-          send(input);
+          void send(input);
         }}
       >
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask the knowledge base..."
+          placeholder="Ask the assistant..."
+          disabled={isSending}
           className="h-10 flex-1 rounded-xl border border-slate-200 bg-slate-50/50 text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-indigo-200/60 focus-visible:border-indigo-300 focus-visible:bg-white transition-all"
         />
         <Button
           type="submit"
           size="icon"
+          disabled={isSending}
           className="h-10 w-10 shrink-0 rounded-xl bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-indigo-300 transition-all duration-200"
         >
-          <Send className="size-4" />
+          {isSending ? (
+            <div className="size-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          ) : (
+            <Send className="size-4" />
+          )}
         </Button>
       </form>
     </section>

@@ -164,9 +164,7 @@ export default function CoPilotPage() {
   const [transcriptEntries, setTranscriptEntries] = useState<
     TranscriptEntry[]
   >([]);
-  const [suggestion, setSuggestion] = useState<ResolutionSuggestion | null>(
-    null
-  );
+  const [suggestions, setSuggestions] = useState<ResolutionSuggestion[]>([]);
   const [aiCustomerInsights, setAiCustomerInsights] =
     useState<AiCustomerInsights | null>(null);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
@@ -506,7 +504,7 @@ export default function CoPilotPage() {
             intent
           );
           if (resolutionResult) {
-            setSuggestion(resolutionResult);
+            setSuggestions((prev) => [...prev, resolutionResult]);
             updateAiInsightsFromSuggestion(resolutionResult);
           }
         } catch (err) {
@@ -593,7 +591,7 @@ export default function CoPilotPage() {
     sendTranscriptForResolution(fullText, sessionId, personaLabel, selectedIntent)
       .then((result) => {
         if (result) {
-          setSuggestion(result);
+          setSuggestions((prev) => [...prev, result]);
           updateAiInsightsFromSuggestion(result);
         }
       })
@@ -693,7 +691,18 @@ export default function CoPilotPage() {
           }),
         });
         if (res.ok) {
-          const record = await res.json();
+          let record: any;
+          try {
+            record = await res.json();
+          } catch (e) {
+            const errText = await res.text().catch(() => "");
+            console.warn("[CoPilot] saveCallAndGetSummary API returned non-JSON", {
+              status: res.status,
+              statusText: res.statusText,
+              body: errText?.slice(0, 500),
+            });
+            return { record: summary, savedToHistory: false, usedLocalFallback };
+          }
           const storageFlag: string | undefined = record?._storage;
           const savedFlagFromApi: boolean | undefined = record?.savedToHistory;
           const savedToHistory =
@@ -715,10 +724,13 @@ export default function CoPilotPage() {
 
           return { record: recordWithFallback, savedToHistory, usedLocalFallback };
         }
-        const errBody = await res.text();
-        console.error("[CoPilot] saveCallAndGetSummary API error", {
+        const errBody = await res.text().catch(() => "");
+        // Use warn (not error) to avoid triggering the Next.js error overlay for a
+        // non-fatal condition (we can still show the locally-generated summary).
+        console.warn("[CoPilot] saveCallAndGetSummary API non-OK response", {
           status: res.status,
-          body: errBody?.slice(0, 200),
+          statusText: res.statusText,
+          body: errBody?.slice(0, 500),
         });
         return { record: summary, savedToHistory: false, usedLocalFallback };
       } catch (err) {
@@ -824,8 +836,11 @@ export default function CoPilotPage() {
   const handleStartCall = useCallback(() => {
     setCallStatus("connecting");
     setTranscriptEntries([]);
-    setSuggestion(null);
+    setSuggestions([]);
     setAiCustomerInsights(null);
+    setCurrentCallRecord(null);
+    setCurrentCustomerName(undefined);
+    setCurrentCustomerAccount(undefined);
     setSummarySaved(false);
     setSummaryError(null);
     setSummaryUsedFallback(false);
@@ -994,8 +1009,11 @@ export default function CoPilotPage() {
     setIsSuggestionsLoading(false);
     setCallStatus("ringing");
     setTranscriptEntries([]);
-    setSuggestion(null);
+    setSuggestions([]);
     setAiCustomerInsights(null);
+    setCurrentCallRecord(null);
+    setCurrentCustomerName(undefined);
+    setCurrentCustomerAccount(undefined);
     setCallDuration(0);
     setSummarySaved(false);
     setSummaryError(null);
@@ -1044,8 +1062,9 @@ export default function CoPilotPage() {
     setTranscriptEntries([]);
     setCallStatus("active");
     setCallDuration(0);
-    setSuggestion(null);
+    setSuggestions([]);
     setAiCustomerInsights(null);
+    setCurrentCallRecord(null);
     setSummarySaved(false);
     setSummaryError(null);
     setSummaryUsedFallback(false);
@@ -1121,7 +1140,7 @@ export default function CoPilotPage() {
               scriptedPlaybackRunIdRef.current === runId &&
               result
             ) {
-              setSuggestion(result);
+              setSuggestions((prev) => [...prev, result]);
               updateAiInsightsFromSuggestion(result);
             }
           } catch (err) {
@@ -1213,7 +1232,7 @@ export default function CoPilotPage() {
 
   return (
     <div
-      className="h-screen w-screen p-4 flex gap-4 bg-[radial-gradient(circle_at_top,_rgba(191,219,254,0.7),_transparent_55%),linear-gradient(to_br,_#f5f3ff,_#e0f2fe)]"
+      className="h-screen w-screen p-4 flex gap-4"
       suppressHydrationWarning
     >
       <AppSidebar />
@@ -1252,6 +1271,7 @@ export default function CoPilotPage() {
                     <TranscriptFeed
                       entries={transcriptEntries}
                       isActive={callStatus === "active"}
+                      onToggleCollapsed={() => setIsTranscriptCollapsed(true)}
                     />
                     {(callStatus === "summarizing" || callStatus === "ended") && (
                       <div className="shrink-0 px-4 py-3 border-t border-gray-200 bg-slate-50 flex flex-wrap items-center gap-2">
@@ -1295,14 +1315,6 @@ export default function CoPilotPage() {
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsTranscriptCollapsed(true)}
-                    className="absolute inset-y-0 -right-3 my-auto size-7 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all duration-200"
-                    aria-label="Collapse transcript panel"
-                  >
-                    <ChevronLeft className="size-3.5" />
-                  </button>
                 </div>
               )}
             </div>
@@ -1393,7 +1405,7 @@ export default function CoPilotPage() {
             {/* Middle panel: AI suggestions (AI Assist box) */}
             <div className="flex-1 h-full overflow-hidden rounded-2xl border border-gray-200 bg-white">
               <SuggestionsPanel
-                suggestion={suggestion}
+                suggestions={suggestions}
                 isLoading={isSuggestionsLoading}
                 isActive={callStatus === "active"}
                 hasCustomerSpoken={hasCustomerSpoken}
@@ -1421,16 +1433,16 @@ export default function CoPilotPage() {
                   <div className="h-full w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-white flex flex-col shadow-[0_18px_40px_rgba(148,163,184,0.5)]">
                     {/* Header: collapse button + tabs */}
                     <div className="px-4 pt-3 pb-2 border-b border-slate-200/80 bg-white">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="relative flex items-center gap-3 w-full">
                         <button
                           type="button"
                           onClick={() => setIsRightPanelCollapsed(true)}
-                          className="inline-flex items-center justify-center size-9 rounded-xl bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all duration-200"
+                          className="inline-flex items-center justify-center size-7 rounded-full bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all duration-200"
                           aria-label="Collapse assistant panel"
                         >
-                          <ChevronRight className="size-4" />
+                          <ChevronRight className="size-3.5" />
                         </button>
-                        <div className="inline-flex rounded-xl bg-slate-100/80 p-1 text-[11px]">
+                        <div className="absolute left-1/2 -translate-x-1/2 inline-flex flex-nowrap whitespace-nowrap rounded-xl bg-slate-100/80 p-1 text-[11px]">
                           <button
                             type="button"
                             onClick={() => setRightPanelTab("chat")}
@@ -1488,17 +1500,23 @@ export default function CoPilotPage() {
                       ) : (
                         <CustomerAssistChat
                           customerContext={(() => {
-                            const p = SPOOF_PERSONAS.find(
-                              (x) => x.value === selectedPersona
+                            // In "First time customer" mode, force the same customer context
+                            // everywhere (chat + info) so it never shows a spoof persona name.
+                            const personaLabelForContext =
+                              callMode === "new_customer"
+                                ? "New customer (construction project)"
+                                : SPOOF_PERSONAS.find(
+                                    (x) => x.value === selectedPersona
+                                  )?.label;
+                            const profile = getCustomerInfoForPersona(
+                              personaLabelForContext
                             );
-                            const profile = p
-                              ? getCustomerInfoForPersona(p.label)
-                              : null;
                             return profile
                               ? {
                                   name: profile.name,
                                   accountId: profile.account ?? undefined,
-                                  personaLabel: p?.label,
+                                  personaLabel:
+                                    personaLabelForContext ?? profile.personaLabel,
                                 }
                               : undefined;
                           })()}

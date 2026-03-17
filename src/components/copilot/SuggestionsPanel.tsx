@@ -21,7 +21,10 @@ import type { FirstTimeCallerSuggestionState } from "@/mock/new-customer-scenari
 import type { ProductOption } from "@/mock/product-catalog";
 
 interface SuggestionsPanelProps {
-  suggestion: ResolutionSuggestion | null;
+  /** New (preferred): append-only history of suggestions. */
+  suggestions?: ResolutionSuggestion[];
+  /** Back-compat: single suggestion (legacy). */
+  suggestion?: ResolutionSuggestion | null;
   isLoading: boolean;
   isActive: boolean;
   /** True after at least one customer utterance is present in the transcript. */
@@ -45,23 +48,28 @@ const SENTIMENT_CONFIG: Record<string, { color: string; bg: string }> = {
 };
 
 export function SuggestionsPanel({
+  suggestions,
   suggestion,
   isLoading,
   isActive,
   hasCustomerSpoken = false,
-  onSayWhisper,
   productRecommendations = [],
   firstTimeCustomerState,
 }: SuggestionsPanelProps) {
-  const s = suggestion;
-  const sentimentCfg =
-    SENTIMENT_CONFIG[s?.customer_sentiment || "neutral"] ||
-    SENTIMENT_CONFIG.neutral;
+  const suggestionList =
+    suggestions ??
+    (suggestion ? [suggestion] : []);
+  const s =
+    suggestionList.length > 0
+      ? suggestionList[suggestionList.length - 1]
+      : null;
   const isNewCustomerGuidanceMode = !!firstTimeCustomerState;
 
-  const showEmpty = !isActive && !s;
-  const showWaitingForCustomer = isActive && !s && !hasCustomerSpoken;
-  const showAnalyzing = isActive && !s && hasCustomerSpoken;
+  const showEmpty = !isActive && suggestionList.length === 0;
+  const showWaitingForCustomer =
+    isActive && suggestionList.length === 0 && !hasCustomerSpoken;
+  const showAnalyzing =
+    isActive && suggestionList.length === 0 && hasCustomerSpoken;
   const hasProducts = Array.isArray(productRecommendations) && productRecommendations.length > 0;
 
   return (
@@ -119,34 +127,32 @@ export function SuggestionsPanel({
                       Suggestion
                     </span>
                   </div>
-                  <p className="text-[13px] leading-relaxed text-slate-800 break-words">
-                    {firstTimeCustomerState.intentSummary}
-                  </p>
-                </div>
-
-                {/* INSIGHTS */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Brain className="size-3.5 text-slate-500 shrink-0" />
-                    <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-                      Insights
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className="bg-[#eef2ff] text-[#4f46e5] border-[#e0e7ff] text-[11px]"
-                      >
-                        first-time caller
-                      </Badge>
-                    </div>
-                    {firstTimeCustomerState.recommendedBundle && (
-                      <p className="rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] text-slate-600 leading-snug break-words">
-                        {firstTimeCustomerState.recommendedBundle}
-                      </p>
-                    )}
-                  </div>
+                  {/* Append-only suggestion history (do not replace older items). */}
+                  {suggestionList.length > 0 ? (
+                    <ol className="list-decimal pl-4 space-y-1 text-[13px] leading-relaxed text-slate-800 break-words">
+                      {suggestionList.map((item, idx) => {
+                        const text = item.off_topic
+                          ? (item.message || "").trim()
+                          : (item.whisper_response || "").trim();
+                        if (!text) return null;
+                        return (
+                          <li
+                            key={idx}
+                            className={cn(
+                              "whitespace-pre-line",
+                              item.off_topic ? "text-amber-800" : "text-slate-800"
+                            )}
+                          >
+                            {text}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    <p className="text-[13px] leading-relaxed text-slate-800 break-words">
+                      {firstTimeCustomerState.intentSummary}
+                    </p>
+                  )}
                 </div>
 
                 {/* Equipment */}
@@ -158,21 +164,18 @@ export function SuggestionsPanel({
                         Equipment to offer
                       </span>
                     </div>
-                    {firstTimeCustomerState.equipmentToOffer.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-lg bg-white border border-slate-200 p-2.5"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-bold text-primary mt-0.5 shrink-0">
-                            {idx + 1}.
-                          </span>
-                          <div className="text-xs font-medium text-slate-800 break-words">
+                    <div className="rounded-xl bg-white border border-slate-200 p-3">
+                      <ol className="list-decimal pl-4 space-y-1.5">
+                        {firstTimeCustomerState.equipmentToOffer.map((item, idx) => (
+                          <li
+                            key={idx}
+                            className="text-xs font-medium text-slate-800 break-words"
+                          >
                             {item}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
                   </div>
                 )}
 
@@ -185,21 +188,18 @@ export function SuggestionsPanel({
                         Clarifying questions
                       </span>
                     </div>
-                    {firstTimeCustomerState.clarifyingQuestions.map((q, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-lg bg-white border border-slate-200 p-2.5"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-bold text-primary mt-0.5 shrink-0">
-                            {idx + 1}.
-                          </span>
-                          <div className="text-xs font-medium text-slate-800 break-words">
+                    <div className="rounded-xl bg-white border border-slate-200 p-3">
+                      <ol className="list-decimal pl-4 space-y-1.5">
+                        {firstTimeCustomerState.clarifyingQuestions.map((q, idx) => (
+                          <li
+                            key={idx}
+                            className="text-xs font-medium text-slate-800 break-words"
+                          >
                             {q}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
                   </div>
                 )}
 
@@ -319,8 +319,58 @@ export function SuggestionsPanel({
               </div>
             )}
 
-            {!isNewCustomerGuidanceMode && s && !s.off_topic && (
+            {!isNewCustomerGuidanceMode && suggestionList.length > 0 && (
               <>
+                {/* Suggestion history in a single box (append-only; newest at bottom) */}
+                <div className="rounded-xl bg-primary/5 border border-primary/20 p-3.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Brain className="size-4 text-primary shrink-0" />
+                      <span className="text-xs font-semibold text-primary uppercase tracking-wide truncate">
+                        AI Suggestion
+                      </span>
+                    </div>
+                    {s?.intent_detected ? (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] h-[18px] px-2",
+                          (SENTIMENT_CONFIG[s.customer_sentiment || "neutral"] ||
+                            SENTIMENT_CONFIG.neutral).bg,
+                          (SENTIMENT_CONFIG[s.customer_sentiment || "neutral"] ||
+                            SENTIMENT_CONFIG.neutral).color,
+                          "border-slate-200"
+                        )}
+                      >
+                        {String(s.intent_detected).replace(/_/g, " ")}
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <MessageSquare className="size-3.5 text-slate-500 shrink-0 mt-0.5" />
+                    <ol className="list-decimal pl-4 space-y-1 text-[13px] leading-relaxed text-slate-800 break-words">
+                      {suggestionList.map((item, idx) => {
+                        const text = item.off_topic
+                          ? (item.message || "").trim()
+                          : (item.whisper_response || "").trim();
+                        if (!text) return null;
+                        return (
+                          <li
+                            key={idx}
+                            className={cn(
+                              "whitespace-pre-line",
+                              item.off_topic ? "text-amber-800" : "text-slate-800"
+                            )}
+                          >
+                            {text}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                </div>
+
                 {/* 1. Read this out — customer-facing line the agent says aloud; "Say this" sends as agent (audio + text) */}
                 {/* {s.suggested_response && (
                   <div className="rounded-xl bg-violet-50 border border-violet-200 p-3.5">
@@ -348,267 +398,200 @@ export function SuggestionsPanel({
                   </div>
                 )} */}
 
-                {/* 2. Response suggestion — internal steps / notes (whisper) */}
-                {s.whisper_response && (
-                  <div className="rounded-xl bg-primary/5 border border-primary/20 p-3.5">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Brain className="size-4 text-primary shrink-0" />
-                      <span className="text-xs font-semibold text-primary uppercase tracking-wide">
-                        AI Suggestion
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MessageSquare className="size-3.5 text-slate-500 shrink-0 mt-0.5" />
-                      <p className="text-[13px] leading-relaxed text-slate-800 break-words whitespace-pre-line">
-                        {s.whisper_response}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Insights */}
-                <div className="space-y-3 pt-1 border-t border-gray-100">
-                  <div className="flex items-center gap-1.5">
-                    <Brain className="size-3.5 text-gray-500 shrink-0" />
-                    <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
-                      Insights
-                    </span>
-                  </div>
-
-                  {/* Intent + Sentiment */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {s.intent_detected && (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-50 text-primary border-blue-200 text-[11px]"
-                      >
-                        {s.intent_detected.replace(/_/g, " ")}
-                      </Badge>
-                    )}
-                    {s.customer_sentiment && (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-[11px]",
-                          sentimentCfg.color,
-                          sentimentCfg.bg,
-                          "border-current/20"
-                        )}
-                      >
-                        {s.customer_sentiment}
-                      </Badge>
-                    )}
-                    {s.confidence != null && (
-                      <span className="text-[10px] text-gray-400">
-                        {s.confidence <= 1
-                          ? Math.round(s.confidence * 100)
-                          : Math.min(100, Math.round(s.confidence))}% confidence
-                      </span>
-                    )}
-                  </div>
-
-                  {s.sentiment_cues && (
-                    <p className="text-xs text-gray-500 italic break-words">
-                      {s.sentiment_cues}
-                    </p>
-                  )}
-
-                  {/* De-escalation Tip */}
-                  {s.de_escalation_tip && (
-                    <div className="rounded-xl bg-orange-50 border border-orange-200 p-3 flex gap-2">
-                      <ShieldAlert className="size-4 shrink-0 text-orange-600 mt-0.5" />
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-semibold text-orange-800 mb-0.5">
-                          De-escalation Tip
-                        </div>
-                        <p className="text-xs text-orange-700 break-words">
-                          {s.de_escalation_tip}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                {/* Resolution Steps — only show if at least one step has content */}
-                {(() => {
-                  const steps =
-                    Array.isArray(s.resolution_steps) &&
-                    s.resolution_steps.filter(
-                      (step) =>
-                        (step.action || "").trim() || (step.detail || "").trim()
-                    );
-                  return steps && steps.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <CheckCircle className="size-3.5 text-emerald-600 shrink-0" />
-                        <span className="text-[11px] font-semibold text-gray-700">
-                          Resolution Steps
-                        </span>
-                      </div>
-                      {steps.map((step, i) => (
-                        <div
-                          key={i}
-                          className="rounded-lg bg-gray-50 border border-gray-200 p-2.5"
-                        >
-                          <div className="flex items-start gap-2">
-                            <span className="text-xs font-bold text-primary mt-0.5 shrink-0">
-                              {step.step}.
+                {/* Keep detailed sections only for the latest suggestion to avoid clutter */}
+                {s && !s.off_topic && (
+                  <>
+                    {/* Resolution Steps — only show if at least one step has content */}
+                    {(() => {
+                      const steps =
+                        Array.isArray(s.resolution_steps) &&
+                        s.resolution_steps.filter(
+                          (step) =>
+                            (step.action || "").trim() || (step.detail || "").trim()
+                        );
+                      return steps && steps.length > 0 ? (
+                        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <CheckCircle className="size-3.5 text-emerald-600 shrink-0" />
+                            <span className="text-[11px] font-semibold text-gray-700">
+                              Resolution Steps
                             </span>
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium text-gray-800 break-words">
-                                {(step.action || "").trim() || "—"}
-                              </div>
-                              {(step.detail || "").trim() ? (
-                                <div className="text-[11px] text-gray-500 mt-0.5 break-words">
-                                  {step.detail}
+                          </div>
+                          <div className="space-y-2">
+                            {steps.map((step, i) => (
+                              <div key={i} className="flex items-start gap-2">
+                                <span className="text-xs font-bold text-primary mt-0.5 shrink-0">
+                                  {step.step}.
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-medium text-gray-800 break-words">
+                                    {(step.action || "").trim() || "—"}
+                                  </div>
+                                  {(step.detail || "").trim() ? (
+                                    <div className="text-[11px] text-gray-500 mt-0.5 break-words">
+                                      {step.detail}
+                                    </div>
+                                  ) : null}
+                                  {step.system_reference &&
+                                    step.system_reference !== "null" && (
+                                      <Badge
+                                        variant="outline"
+                                        className="mt-1 text-[9px] h-[16px] bg-white border-gray-200"
+                                      >
+                                        {step.system_reference}
+                                      </Badge>
+                                    )}
                                 </div>
-                              ) : null}
-                              {step.system_reference &&
-                                step.system_reference !== "null" && (
-                                  <Badge
-                                    variant="outline"
-                                    className="mt-1 text-[9px] h-[16px] bg-gray-100 border-gray-200"
-                                  >
-                                    {step.system_reference}
-                                  </Badge>
-                                )}
-                            </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : null;
-                })()}
+                      ) : null;
+                    })()}
 
-                {/* Policy References — only show if at least one ref has content */}
-                {(() => {
-                  const refs =
-                    Array.isArray(s.knowledge_references) &&
-                    s.knowledge_references.filter(
-                      (ref) =>
-                        (ref.title || "").trim() ||
-                        (ref.relevant_excerpt || "").trim()
-                    );
-                  return refs && refs.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <BookOpen className="size-3.5 text-blue-600 shrink-0" />
-                        <span className="text-[11px] font-semibold text-gray-700">
-                          Policy References
-                        </span>
-                      </div>
-                      {refs.map((ref, i) => (
-                        <div
-                          key={i}
-                          className="rounded-lg bg-blue-50 border border-blue-100 p-2.5"
-                        >
-                          <div className="text-[11px] font-semibold text-blue-800 break-words">
-                            {(ref.title || "").trim() || "Policy reference"}
+                    {/* Policy References — only show if at least one ref has content */}
+                    {(() => {
+                      const refs =
+                        Array.isArray(s.knowledge_references) &&
+                        s.knowledge_references
+                          .map((ref) => ({
+                            title: (ref.title || "").trim(),
+                            excerpt: (ref.relevant_excerpt || "").trim(),
+                          }))
+                          // Drop generic placeholder titles like "Reference"
+                          .map((ref) => ({
+                            ...ref,
+                            title:
+                              /^reference$/i.test(ref.title) ||
+                              /^policy reference$/i.test(ref.title)
+                                ? ""
+                                : ref.title,
+                          }))
+                          // Only keep entries that have an actual title or excerpt
+                          .filter((ref) => ref.title || ref.excerpt);
+                      return refs && refs.length > 0 ? (
+                        <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <BookOpen className="size-3.5 text-blue-600 shrink-0" />
+                            <span className="text-[11px] font-semibold text-gray-700">
+                              Policy References
+                            </span>
                           </div>
-                          <p className="text-[11px] text-blue-600 mt-0.5 break-words">
-                            {(ref.relevant_excerpt || "").trim() || "—"}
-                          </p>
+                          <div className="space-y-2">
+                            {refs.map((ref, i) => (
+                              <div key={i} className="min-w-0">
+                                {ref.title ? (
+                                  <div className="text-[11px] font-semibold text-blue-800 break-words">
+                                    {ref.title}
+                                  </div>
+                                ) : null}
+                                {ref.excerpt ? (
+                                  <p className="text-[11px] text-blue-700 mt-0.5 break-words">
+                                    {ref.excerpt}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : null;
-                })()}
+                      ) : null;
+                    })()}
 
-                {/* Equipment Info */}
-                {s.equipment_info &&
-                  Array.isArray(s.equipment_info.mentioned) &&
-                  s.equipment_info.mentioned.length > 0 && (
-                    <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <Package className="size-3.5 text-gray-600 shrink-0" />
-                        <span className="text-[11px] font-semibold text-gray-700">
-                          Equipment
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {s.equipment_info.mentioned.map((eq, i) => (
-                          <Badge
-                            key={i}
-                            variant="outline"
-                            className="text-[10px] bg-white border-gray-200"
-                          >
-                            {eq}
-                          </Badge>
-                        ))}
-                      </div>
-                      {s.equipment_info.certification_required && (
-                        <p className="text-[11px] text-amber-700 mt-2 break-words">
-                          Certification required:{" "}
-                          {s.equipment_info.certification_required}
-                        </p>
-                      )}
-                      {Array.isArray(s.equipment_info.accessories_to_suggest) &&
-                        s.equipment_info.accessories_to_suggest.length > 0 && (
-                          <p className="text-[11px] text-gray-500 mt-1 break-words">
-                            Accessories:{" "}
-                            {s.equipment_info.accessories_to_suggest.join(
-                              ", "
+                    {/* Equipment Info */}
+                    {s.equipment_info &&
+                      Array.isArray(s.equipment_info.mentioned) &&
+                      s.equipment_info.mentioned.length > 0 && (
+                        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Package className="size-3.5 text-gray-600 shrink-0" />
+                            <span className="text-[11px] font-semibold text-gray-700">
+                              Equipment
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {s.equipment_info.mentioned.map((eq, i) => (
+                              <Badge
+                                key={i}
+                                variant="outline"
+                                className="text-[10px] bg-white border-gray-200"
+                              >
+                                {eq}
+                              </Badge>
+                            ))}
+                          </div>
+                          {s.equipment_info.certification_required && (
+                            <p className="text-[11px] text-amber-700 mt-2 break-words">
+                              Certification required:{" "}
+                              {s.equipment_info.certification_required}
+                            </p>
+                          )}
+                          {Array.isArray(s.equipment_info.accessories_to_suggest) &&
+                            s.equipment_info.accessories_to_suggest.length > 0 && (
+                              <p className="text-[11px] text-gray-500 mt-1 break-words">
+                                Accessories:{" "}
+                                {s.equipment_info.accessories_to_suggest.join(", ")}
+                              </p>
                             )}
+                        </div>
+                      )}
+
+                    {/* Escalation Alert */}
+                    {(s.escalation?.needed || s.escalation?.escalate_to) && (
+                      <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex gap-2">
+                        <AlertTriangle className="size-4 shrink-0 text-red-600 mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-red-800 mb-0.5">
+                            Escalation Needed
+                          </div>
+                          {(s.escalation.reason || s.escalation.escalate_to) && (
+                            <p className="text-xs text-red-700 break-words">
+                              {s.escalation.reason || s.escalation.escalate_to}
+                            </p>
+                          )}
+                          {s.escalation.escalate_to && (
+                            <Badge
+                              variant="outline"
+                              className="mt-1.5 text-[10px] bg-red-100 text-red-700 border-red-200"
+                            >
+                              Escalate to:{" "}
+                              {String(s.escalation.escalate_to).replace(/_/g, " ")}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cross-sell */}
+                    {s.cross_sell_opportunity && (
+                      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
+                        <TrendingUp className="size-4 shrink-0 text-emerald-600 mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-emerald-800 mb-0.5">
+                            Cross-sell Opportunity
+                          </div>
+                          <p className="text-xs text-emerald-700 break-words">
+                            {s.cross_sell_opportunity}
                           </p>
-                        )}
-                    </div>
-                  )}
-
-                {/* Escalation Alert */}
-                {(s.escalation?.needed || s.escalation?.escalate_to) && (
-                  <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex gap-2">
-                    <AlertTriangle className="size-4 shrink-0 text-red-600 mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-red-800 mb-0.5">
-                        Escalation Needed
+                        </div>
                       </div>
-                      {(s.escalation.reason || s.escalation.escalate_to) && (
-                        <p className="text-xs text-red-700 break-words">
-                          {s.escalation.reason || s.escalation.escalate_to}
-                        </p>
-                      )}
-                      {s.escalation.escalate_to && (
-                        <Badge
-                          variant="outline"
-                          className="mt-1.5 text-[10px] bg-red-100 text-red-700 border-red-200"
-                        >
-                          Escalate to:{" "}
-                          {String(s.escalation.escalate_to).replace(/_/g, " ")}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
+                    )}
 
-                {/* Cross-sell */}
-                {s.cross_sell_opportunity && (
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
-                    <TrendingUp className="size-4 shrink-0 text-emerald-600 mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-emerald-800 mb-0.5">
-                        Cross-sell Opportunity
+                    {/* Next Best Action */}
+                    {s.next_best_action && (
+                      <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 flex gap-2">
+                        <ArrowRight className="size-4 shrink-0 text-primary mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-primary mb-0.5">
+                            Next Best Action
+                          </div>
+                          <p className="text-xs text-gray-700 break-words">
+                            {s.next_best_action}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-emerald-700 break-words">
-                        {s.cross_sell_opportunity}
-                      </p>
-                    </div>
-                  </div>
+                    )}
+                  </>
                 )}
-
-                {/* Next Best Action */}
-                {s.next_best_action && (
-                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 flex gap-2">
-                    <ArrowRight className="size-4 shrink-0 text-primary mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-primary mb-0.5">
-                        Next Best Action
-                      </div>
-                      <p className="text-xs text-gray-700 break-words">
-                        {s.next_best_action}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                </div>
               </>
             )}
           </div>

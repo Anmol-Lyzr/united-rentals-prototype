@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ChevronLeft } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { TranscriptEntry } from "@/types/call-records";
@@ -16,6 +17,7 @@ interface TranscriptFeedProps {
 export function TranscriptFeed({
   entries,
   isActive,
+  onToggleCollapsed,
 }: TranscriptFeedProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -29,9 +31,21 @@ export function TranscriptFeed({
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Header */}
       <div className="shrink-0 h-11 px-5 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-800 truncate">
-          Live Transcript
-        </h3>
+        <div className="flex items-center gap-2 min-w-0">
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className="size-7 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all duration-200"
+              aria-label="Collapse transcript panel"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+          )}
+          <h3 className="text-sm font-semibold text-gray-800 truncate">
+            Live Transcript
+          </h3>
+        </div>
         {isActive && (
           <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />

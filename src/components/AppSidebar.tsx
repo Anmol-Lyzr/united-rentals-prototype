@@ -42,7 +42,7 @@ export function AppSidebar({ className }: { className?: string }) {
     return (
       <div
         className={cn(
-          "flex h-full w-[72px] flex-col items-center justify-between bg-[radial-gradient(circle_at_top,_rgba(191,219,254,0.7),_transparent_55%),linear-gradient(to_bottom,_#eef2ff,_#e0e7ff)] border border-white/80 shadow-[0_22px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl",
+          "flex h-full w-[72px] flex-col items-center justify-between rounded-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(191,219,254,0.7),_transparent_55%),linear-gradient(to_bottom,_#eef2ff,_#e0e7ff)] border border-white/80 shadow-[0_22px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl",
           className
         )}
       >
